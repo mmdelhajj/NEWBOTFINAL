@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>School Management - WhatsBot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background: #f5f5f5; }
+        .school-card { background: white; border-radius: 10px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .school-card.disabled { opacity: 0.6; background: #f8f8f8; }
+        .toggle-switch { cursor: pointer; }
+        .book-row { border-bottom: 1px solid #eee; padding: 10px 0; }
+        .book-row:hover { background: #f9f9f9; }
+        .coming-soon { color: #ff9800; font-weight: bold; }
+        .arriving { color: #4caf50; font-weight: bold; }
+        .modal-lg { max-width: 900px; }
+        .nav-pills .nav-link.active { background: #0d6efd; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/dashboard"><i class="bi bi-robot"></i> WhatsBot</a>
+            <div>
+                <a href="/schools" class="btn btn-outline-light btn-sm me-2">View Schools</a>
+                <a href="/dashboard" class="btn btn-outline-light btn-sm">Dashboard</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2><i class="bi bi-building"></i> School Management</h2>
+        <p class="text-muted">Enable/disable schools, rename, add books, manage arrival dates</p>
+
+        <!-- Tabs -->
+        <ul class="nav nav-pills mb-4" id="mainTabs">
+            <li class="nav-item">
+                <a class="nav-link active" data-bs-toggle="pill" href="#schools-tab">
+                    <i class="bi bi-list-check"></i> Schools ({{ schools|length }})
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="pill" href="#arriving-tab">
+                    <i class="bi bi-clock"></i> Coming Soon
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="pill" href="#add-book-tab">
+                    <i class="bi bi-plus-circle"></i> Add Book to School
+                </a>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- Schools Tab -->
+            <div class="tab-pane fade show active" id="schools-tab">
+                <div class="row">
+                    {% for school in schools %}
+                    <div class="col-md-6 col-lg-4">
+                        <div class="school-card {{ 'disabled' if not school.is_active }}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5 class="mb-1">{{ school.display_name or school.name }}</h5>
+                                    {% if school.display_name and school.display_name != school.name %}
+                                    <small class="text-muted">({{ school.name }})</small>
+                                    {% endif %}
+                                    <div class="mt-2">
+                                        <span class="badge bg-info">{{ school.book_count }} books</span>
+                                        <span class="badge {{ 'bg-success' if school.is_active else 'bg-secondary' }}">
+                                            {{ 'Active' if school.is_active else 'Disabled' }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input toggle-switch" type="checkbox"
+                                           {{ 'checked' if school.is_active }}
+                                           onchange="toggleSchool({{ school.id }}, this.checked)">
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <button class="btn btn-sm btn-outline-primary" onclick="openRenameModal({{ school.id }}, '{{ school.display_name or school.name }}')" title="Rename">
+                                    <i class="bi bi-pencil"></i> Rename
+                                </button>
+                                <a href="/schools/manage/{{ school.id }}/books" class="btn btn-sm btn-outline-secondary" title="Manage Books">
+                                    <i class="bi bi-book"></i> Books
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Coming Soon Tab -->
+            <div class="tab-pane fade" id="arriving-tab">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-clock"></i> Books Coming Soon / Arriving</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Book</th>
+                                    <th>School</th>
+                                    <th>Status</th>
+                                    <th>Arrival Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="arrivingBooks">
+                                {% for book in arriving_books %}
+                                <tr>
+                                    <td>{{ book.item_name[:50] }}</td>
+                                    <td>{{ book.subcategory }}</td>
+                                    <td>
+                                        <span class="{{ 'coming-soon' if book.arrival_status == 'coming_soon' else 'arriving' }}">
+                                            {{ book.arrival_status|replace('_', ' ')|title }}
+                                        </span>
+                                    </td>
+                                    <td>{{ book.expected_arrival.strftime('%d/%m/%Y') if book.expected_arrival else 'Not set' }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-warning me-1" onclick="editArrival({{ book.id }}, '{{ book.item_name[:30]|e }}', '{{ book.arrival_status }}', '{{ book.expected_arrival.strftime("%Y-%m-%d") if book.expected_arrival else "" }}')">
+                                            <i class="bi bi-pencil"></i> Edit
+                                        </button>
+                                        <button class="btn btn-sm btn-success" onclick="markArrived({{ book.id }})">
+                                            <i class="bi bi-check"></i> Arrived
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="5" class="text-center text-muted">No books marked as coming soon</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Book Tab -->
+            <div class="tab-pane fade" id="add-book-tab">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-plus-circle"></i> Add Existing Product to School</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">Search Product</label>
+                                <input type="text" class="form-control" id="productSearch"
+                                       placeholder="Type product name..." onkeyup="searchProducts()">
+                                <div id="productResults" class="list-group mt-2" style="max-height: 300px; overflow-y: auto;"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Select School</label>
+                                <select class="form-select" id="targetSchool">
+                                    <option value="">-- Select School --</option>
+                                    {% for school in schools %}
+                                    <option value="{{ school.name }}">{{ school.display_name or school.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <label class="form-label mt-3">Grade Level</label>
+                                <select class="form-select" id="gradeLevel">
+                                    <option value="">-- Select Grade --</option>
+                                    <option value="KG1">KG1</option>
+                                    <option value="KG2">KG2</option>
+                                    <option value="KG3">KG3</option>
+                                    <option value="EB1">EB1</option>
+                                    <option value="EB2">EB2</option>
+                                    <option value="EB3">EB3</option>
+                                    <option value="EB4">EB4</option>
+                                    <option value="EB5">EB5</option>
+                                    <option value="EB6">EB6</option>
+                                    <option value="EB7">EB7</option>
+                                    <option value="EB8">EB8</option>
+                                    <option value="EB9">EB9</option>
+                                    <option value="SEC1">SEC1</option>
+                                    <option value="SEC2">SEC2</option>
+                                    <option value="SEC3">SEC3</option>
+                                </select>
+                                <button class="btn btn-primary mt-3" onclick="addBookToSchool()">
+                                    <i class="bi bi-plus"></i> Add to School
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div class="modal fade" id="renameModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Rename School</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="renameSchoolId">
+                    <label class="form-label">Display Name</label>
+                    <input type="text" class="form-control" id="newSchoolName" placeholder="Enter new name">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSchoolName()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let selectedProductId = null;
+
+        function toggleSchool(schoolId, isActive) {
+            fetch('/schools/manage/' + schoolId + '/toggle', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({is_active: isActive})
+            }).then(r => r.json()).then(data => {
+                if (data.success) location.reload();
+                else alert('Error: ' + data.error);
+            });
+        }
+
+        function openRenameModal(schoolId, currentName) {
+            document.getElementById('renameSchoolId').value = schoolId;
+            document.getElementById('newSchoolName').value = currentName;
+            new bootstrap.Modal(document.getElementById('renameModal')).show();
+        }
+
+        function saveSchoolName() {
+            const schoolId = document.getElementById('renameSchoolId').value;
+            const newName = document.getElementById('newSchoolName').value;
+            fetch('/schools/manage/' + schoolId + '/rename', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({display_name: newName})
+            }).then(r => r.json()).then(data => {
+                if (data.success) location.reload();
+                else alert('Error: ' + data.error);
+            });
+        }
+
+        function searchProducts() {
+            const query = document.getElementById('productSearch').value;
+            if (query.length < 2) {
+                document.getElementById('productResults').innerHTML = '';
+                return;
+            }
+            fetch('/api/products/search?q=' + encodeURIComponent(query))
+                .then(r => r.json())
+                .then(data => {
+                    let html = '';
+                    data.products.forEach(p => {
+                        const school = p.subcategory ? ' <small class="text-muted">(' + p.subcategory + ')</small>' : '';
+                        html += '<a href="#" class="list-group-item list-group-item-action" onclick="selectProduct(' + p.id + ', this)">' +
+                                p.item_name.substring(0, 50) + school + '</a>';
+                    });
+                    document.getElementById('productResults').innerHTML = html || '<div class="list-group-item text-muted">No products found</div>';
+                });
+        }
+
+        function selectProduct(productId, elem) {
+            selectedProductId = productId;
+            document.querySelectorAll('#productResults .list-group-item').forEach(e => e.classList.remove('active'));
+            elem.classList.add('active');
+        }
+
+        function addBookToSchool() {
+            if (!selectedProductId) { alert('Select a product first'); return; }
+            const school = document.getElementById('targetSchool').value;
+            const grade = document.getElementById('gradeLevel').value;
+            if (!school) { alert('Select a school'); return; }
+
+            fetch('/schools/manage/add-book', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({product_id: selectedProductId, school: school, grade_level: grade})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    alert('Book added to ' + school);
+                    document.getElementById('productSearch').value = '';
+                    document.getElementById('productResults').innerHTML = '';
+                    selectedProductId = null;
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            });
+        }
+
+        function editArrival(bookId, bookName, status, date) {
+            document.getElementById('arrivalBookId').value = bookId;
+            document.getElementById('arrivalBookName').textContent = bookName;
+            document.getElementById('arrivalStatus').value = status || 'coming_soon';
+            document.getElementById('arrivalDate').value = date || '';
+            new bootstrap.Modal(document.getElementById('arrivalModal')).show();
+        }
+
+        function saveArrival() {
+            const bookId = document.getElementById('arrivalBookId').value;
+            const status = document.getElementById('arrivalStatus').value;
+            const date = document.getElementById('arrivalDate').value;
+
+            fetch('/schools/manage/book/' + bookId + '/arrival', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: status, date: date})
+            }).then(r => r.json()).then(data => {
+                if (data.success) location.reload();
+                else alert('Error: ' + data.error);
+            });
+        }
+
+        function markArrived(bookId) {
+            fetch('/schools/manage/book/' + bookId + '/arrived', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) location.reload();
+                    else alert('Error: ' + data.error);
+                });
+        }
+    </script>
+
+    <!-- Arrival Edit Modal -->
+    <div class="modal fade" id="arrivalModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Arrival Status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="arrivalBookId">
+                    <p id="arrivalBookName" class="text-muted fw-bold"></p>
+
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="arrivalStatus">
+                        <option value="in_stock">In Stock (Normal)</option>
+                        <option value="coming_soon">Coming Soon</option>
+                        <option value="arriving">Arriving</option>
+                    </select>
+
+                    <label class="form-label mt-3">Expected Arrival Date</label>
+                    <input type="date" class="form-control" id="arrivalDate">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveArrival()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

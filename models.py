@@ -79,6 +79,11 @@ class Product(Base):
     is_active = Column(Boolean, default=True)
     is_featured = Column(Boolean, default=False)
 
+    # School-related fields
+    is_school = Column(Boolean, default=False)
+    grade_level = Column(String(20), nullable=True)
+    arrival_status = Column(String(20), default="in_stock")  # in_stock, coming_soon, arriving
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -231,4 +236,15 @@ class BrainsSyncLog(Base):
     duration_seconds = Column(Float, default=0.0)
 
     # Timestamps
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class School(Base):
+    """School model for school book management"""
+    __tablename__ = 'schools'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), unique=True, nullable=False)
+    display_name = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)

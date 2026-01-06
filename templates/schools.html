@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Schools - Admin{% endblock %}
+{% block content %}
+<style>
+.layout { display: grid; grid-template-columns: 250px 250px 1fr; gap: 20px; }
+@media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+.panel { background: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.panel-header { padding: 15px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; font-weight: 600; }
+.list-item { display: flex; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid #f1f1f1; text-decoration: none; color: #333; }
+.list-item:hover { background: #f8f9fa; }
+.list-item.active { background: #e3f2fd; border-left: 3px solid #2196f3; }
+.badge-out { background: #ffebee; color: #c62828; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+.books-table { width: 100%; font-size: 14px; }
+.books-table th, .books-table td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; }
+.books-table th { background: #f8f9fa; }
+.stock-ok { color: #2e7d32; font-weight: 500; }
+.stock-out { color: #c62828; font-weight: 500; }
+.empty-msg { padding: 40px; text-align: center; color: #666; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <nav style="font-size: 14px; margin-bottom: 5px;">
+            <a href="/schools" style="color: #2196f3;">Schools</a>
+            {% if selected_school %}<span style="color: #999;"> → </span><a href="/schools?school={{ selected_school|urlencode }}" style="color: #2196f3;">{{ selected_school }}</a>{% endif %}
+            {% if selected_grade %}<span style="color: #999;"> → </span><strong>{{ selected_grade }}</strong>{% endif %}
+        </nav>
+        <h2><i class="bi bi-mortarboard"></i> School Books</h2>
+    </div>
+    <form method="post" action="/schools/toggle-mode">
+        <button type="submit" class="btn {% if school_mode == 'on' %}btn-success{% else %}btn-secondary{% endif %}">
+            Mode: {{ school_mode|upper }}
+        </button>
+    </form>
+</div>
+
+<div class="layout">
+    <!-- Schools -->
+    <div class="panel">
+        <div class="panel-header"><i class="bi bi-building"></i> Schools ({{ schools|length }})</div>
+        {% for s in schools %}
+        <a href="/schools?school={{ s.name|urlencode }}" class="list-item {% if selected_school == s.name %}active{% endif %}">
+            <div>
+                <div style="font-weight: 500;">{{ s.name }}</div>
+                <small style="color: #666;">{{ s.total }} books</small>
+            </div>
+            {% if s.total - s.available > 0 %}
+            <span class="badge-out">{{ s.total - s.available }} out</span>
+            {% endif %}
+        </a>
+        {% else %}
+        <div class="empty-msg">No schools found</div>
+        {% endfor %}
+    </div>
+
+    <!-- Grades -->
+    <div class="panel">
+        <div class="panel-header"><i class="bi bi-people"></i> Grades</div>
+        {% if selected_school %}
+            {% for g in grades %}
+            <a href="/schools?school={{ selected_school|urlencode }}&grade={{ g.name|urlencode }}" class="list-item {% if selected_grade == g.name %}active{% endif %}">
+                <div>
+                    <div style="font-weight: 500;">{{ g.name }}</div>
+                    <small style="color: #666;">{{ g.total }} books</small>
+                </div>
+                {% if g.total - g.available > 0 %}
+                <span class="badge-out">{{ g.total - g.available }} out</span>
+                {% endif %}
+            </a>
+            {% else %}
+            <div class="empty-msg">No grades found</div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-msg">← Select a school</div>
+        {% endif %}
+    </div>
+
+    <!-- Books -->
+    <div class="panel">
+        <div class="panel-header">
+            <i class="bi bi-book"></i> Books
+            {% if selected_school %} | {{ selected_school }}{% endif %}
+            {% if selected_grade %} | {{ selected_grade }}{% endif %}
+            {% if books %} ({{ books|length }}){% endif %}
+        </div>
+        {% if books %}
+        <div style="padding: 10px; border-bottom: 1px solid #eee;">
+            <input type="text" class="form-control form-control-sm" placeholder="Search books..." id="bookSearch" onkeyup="filterBooks()">
+        </div>
+        <div style="max-height: 600px; overflow-y: auto;">
+            <table class="books-table" id="booksTable">
+                <thead>
+                    <tr>
+                        <th>Book Name</th>
+                        <th>Price</th>
+                        <th>Stock</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for book in books %}
+                    <tr>
+                        <td>{{ book.item_name }}</td>
+                        <td>{{ "{:,.0f}".format(book.price or 0) }} {{ currency }}</td>
+                        <td>
+                            {% if book.stock_quantity and book.stock_quantity > 0 %}
+                            <span class="stock-ok">{{ book.stock_quantity }}</span>
+                            {% else %}
+                            <span class="stock-out">Out</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif selected_grade %}
+        <div class="empty-msg">No books for this grade</div>
+        {% elif selected_school %}
+        <div class="empty-msg">← Select a grade</div>
+        {% else %}
+        <div class="empty-msg">Select a school and grade</div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function filterBooks() {
+    var input = document.getElementById('bookSearch');
+    var filter = input.value.toLowerCase();
+    var table = document.getElementById('booksTable');
+    if (!table) return;
+    var rows = table.getElementsByTagName('tr');
+    for (var i = 1; i < rows.length; i++) {
+        var cells = rows[i].getElementsByTagName('td');
+        var match = false;
+        for (var j = 0; j < cells.length; j++) {
+            if (cells[j].textContent.toLowerCase().indexOf(filter) > -1) {
+                match = true;
+                break;
+            }
+        }
+        rows[i].style.display = match ? '' : 'none';
+    }
+}
+</script>
+{% endblock %}

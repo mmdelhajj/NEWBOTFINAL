@@ -17,11 +17,11 @@ from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import create_engine, or_, and_, func, desc
+from sqlalchemy import create_engine, or_, and_, func, desc, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from config import settings
-from models import Base, Customer, Product, Order, OrderItem, Message, ConversationState, CustomQA, Settings as BotSettings
+from models import Base, Customer, Product, Order, OrderItem, Message, ConversationState, CustomQA, Settings as BotSettings, School
 from services.claude_ai import ClaudeAI
 from services.proxsms import ProxSMSService
 from services.brains_api import BrainsAPI
@@ -470,8 +470,7 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
 
     # Get actual license info from validator
     try:
-        import asyncio
-        license_result = asyncio.get_event_loop().run_until_complete(license_validator.validate())
+        license_result = await license_validator.validate()
         license_basic = license_validator.get_license_info()
         license_info = {
             "license_key": license_basic.get("license_key", "Not registered yet"),
@@ -479,16 +478,19 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
             "license_type": "Paid" if license_result.get("is_paid") else ("Trial" if license_result.get("is_trial") else "Unknown"),
             "license_expiry": license_result.get("expires_at", ""),
             "days_left": license_result.get("days_left", 0),
-            "registered_domain": license_basic.get("domain", "")
+            "registered_domain": license_basic.get("domain", ""),
+            "customer": license_result.get("data", {}).get("customer", "")
         }
     except Exception as e:
+        logger.error(f"License error: {e}")
         license_info = {
             "license_key": "Error loading license",
             "license_status": "Unknown",
             "license_type": "Unknown",
             "license_expiry": "",
             "days_left": 0,
-            "registered_domain": ""
+            "registered_domain": "",
+            "customer": ""
         }
 
     return templates.TemplateResponse("settings.html", {
@@ -1554,6 +1556,324 @@ async def api_sync_accounts(db: Session = Depends(get_db)):
     """Sync accounts from Brains ERP"""
     result = await brains_api.sync_accounts(db, Customer)
     return result
+
+
+# ============ SCHOOL MANAGEMENT ROUTES ============
+
+@app.get("/schools", response_class=HTMLResponse)
+async def schools_page(request: Request, school: str = None, grade: str = None, db: Session = Depends(get_db)):
+    """Schools management page - 3 level hierarchy"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Get school mode setting
+    mode_setting = db.query(BotSettings).filter(BotSettings.setting_key == "school_books_mode").first()
+    school_mode = mode_setting.setting_value if mode_setting else "off"
+
+    # Get all schools with counts
+    schools_query = db.execute(text("""
+        SELECT subcategory as school_name,
+               COUNT(*) as total_books,
+               SUM(CASE WHEN stock_quantity > 0 THEN 1 ELSE 0 END) as available_books
+        FROM products
+        WHERE is_school = 1
+          AND subcategory IS NOT NULL
+          AND subcategory != ''
+          AND subcategory != 'N / A'
+        GROUP BY subcategory
+        ORDER BY subcategory
+    """))
+    schools = [{"name": r[0], "total": r[1], "available": r[2]} for r in schools_query.fetchall()]
+
+    # Get grades for selected school
+    grades = []
+    if school:
+        grades_query = db.execute(text("""
+            SELECT COALESCE(grade_level, 'Other') as grade_name,
+                   COUNT(*) as total_books,
+                   SUM(CASE WHEN stock_quantity > 0 THEN 1 ELSE 0 END) as available_books
+            FROM products
+            WHERE is_school = 1 AND subcategory = :school
+            GROUP BY grade_level
+            ORDER BY
+                CASE
+                    WHEN grade_level = 'PS' THEN 1
+                    WHEN grade_level = 'MS' THEN 2
+                    WHEN grade_level = 'GS' THEN 3
+                    WHEN grade_level = 'KG1' THEN 4
+                    WHEN grade_level = 'KG2' THEN 5
+                    WHEN grade_level = 'KG3' THEN 6
+                    WHEN grade_level = 'CP' THEN 7
+                    WHEN grade_level = 'CE1' THEN 8
+                    WHEN grade_level = 'CE2' THEN 9
+                    WHEN grade_level = 'CM1' THEN 10
+                    WHEN grade_level = 'CM2' THEN 11
+                    WHEN grade_level = 'EB1' THEN 12
+                    WHEN grade_level = 'EB2' THEN 13
+                    WHEN grade_level = 'EB3' THEN 14
+                    WHEN grade_level = 'EB4' THEN 15
+                    WHEN grade_level = 'EB5' THEN 16
+                    WHEN grade_level = 'EB6' THEN 17
+                    WHEN grade_level = 'EB7' THEN 18
+                    WHEN grade_level = 'EB8' THEN 19
+                    WHEN grade_level = 'EB9' THEN 20
+                    ELSE 100
+                END
+        """), {"school": school})
+        grades = [{"name": r[0], "total": r[1], "available": r[2]} for r in grades_query.fetchall()]
+
+    # Get books for selected school and grade
+    books = []
+    if school and grade:
+        if grade == 'Other':
+            books = db.query(Product).filter(
+                Product.subcategory == school,
+                Product.is_school == True,
+                Product.grade_level.is_(None)
+            ).order_by(Product.item_name).all()
+        else:
+            books = db.query(Product).filter(
+                Product.subcategory == school,
+                Product.is_school == True,
+                Product.grade_level == grade
+            ).order_by(Product.item_name).all()
+
+    return templates.TemplateResponse("schools.html", {
+        "request": request,
+        "user": user,
+        "schools": schools,
+        "grades": grades,
+        "books": books,
+        "selected_school": school,
+        "selected_grade": grade,
+        "school_mode": school_mode,
+        "currency": settings.CURRENCY
+    })
+
+
+@app.post("/schools/toggle-mode")
+async def toggle_school_mode(request: Request, db: Session = Depends(get_db)):
+    """Toggle school books mode"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    mode_setting = db.query(BotSettings).filter(BotSettings.setting_key == "school_books_mode").first()
+    if mode_setting:
+        mode_setting.setting_value = "off" if mode_setting.setting_value == "on" else "on"
+    else:
+        mode_setting = BotSettings(setting_key="school_books_mode", setting_value="on")
+        db.add(mode_setting)
+    db.commit()
+
+    return RedirectResponse(url="/schools", status_code=303)
+
+
+@app.get("/schools/manage", response_class=HTMLResponse)
+async def schools_manage_page(request: Request, db: Session = Depends(get_db)):
+    """School management dashboard"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # Get schools with book counts
+    schools_raw = db.query(School).order_by(School.name).all()
+    schools = []
+    for s in schools_raw:
+        book_count = db.query(Product).filter(Product.subcategory == s.name, Product.is_school == True).count()
+        schools.append({
+            'id': s.id,
+            'name': s.name,
+            'display_name': s.display_name,
+            'is_active': s.is_active,
+            'book_count': book_count
+        })
+
+    # Get books with arrival status
+    arriving_books = db.query(Product).filter(
+        Product.is_school == True,
+        Product.arrival_status.in_(['coming_soon', 'arriving'])
+    ).order_by(Product.expected_arrival).all()
+
+    return templates.TemplateResponse("schools_manage.html", {
+        "request": request,
+        "user": user,
+        "schools": schools,
+        "arriving_books": arriving_books
+    })
+
+
+@app.get("/schools/manage/{school_id}/books", response_class=HTMLResponse)
+async def school_books_page(request: Request, school_id: int, db: Session = Depends(get_db)):
+    """Manage books in a specific school"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+
+    school = db.query(School).filter(School.id == school_id).first()
+    if not school:
+        return RedirectResponse("/schools/manage")
+
+    books = db.query(Product).filter(
+        Product.subcategory == school.name,
+        Product.is_school == True
+    ).order_by(Product.grade_level, Product.item_name).all()
+
+    # Get unique grades for filter
+    grades = db.query(Product.grade_level).filter(
+        Product.subcategory == school.name,
+        Product.is_school == True,
+        Product.grade_level.isnot(None)
+    ).distinct().all()
+    grade_order = ['KG1','KG2','KG3','EB1','EB2','EB3','EB4','EB5','EB6','EB7','EB8','EB9','SEC1','SEC2','SEC3']
+    grades = sorted([g[0] for g in grades], key=lambda x: grade_order.index(x) if x in grade_order else 99)
+
+    all_schools = db.query(School).filter(School.is_active == True).order_by(School.name).all()
+
+    return templates.TemplateResponse("school_books.html", {
+        "request": request,
+        "user": user,
+        "school": school,
+        "books": books,
+        "grades": grades,
+        "all_schools": all_schools
+    })
+
+
+@app.post("/schools/manage/{school_id}/toggle")
+async def toggle_school(school_id: int, request: Request, db: Session = Depends(get_db)):
+    """Toggle school active status"""
+    try:
+        data = await request.json()
+        school = db.query(School).filter(School.id == school_id).first()
+        if school:
+            school.is_active = data.get('is_active', True)
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "School not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/schools/manage/{school_id}/rename")
+async def rename_school(school_id: int, request: Request, db: Session = Depends(get_db)):
+    """Rename school display name"""
+    try:
+        data = await request.json()
+        school = db.query(School).filter(School.id == school_id).first()
+        if school:
+            school.display_name = data.get('display_name', school.name)
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "School not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/schools/manage/add-book")
+async def add_book_to_school(request: Request, db: Session = Depends(get_db)):
+    """Add existing product to a school"""
+    try:
+        data = await request.json()
+        product_id = data.get('product_id')
+        school = data.get('school')
+        grade_level = data.get('grade_level')
+
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if product:
+            product.subcategory = school
+            product.is_school = True
+            if grade_level:
+                product.grade_level = grade_level
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "Product not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/schools/manage/book/{book_id}/move")
+async def move_book(book_id: int, request: Request, db: Session = Depends(get_db)):
+    """Move book to another school"""
+    try:
+        data = await request.json()
+        product = db.query(Product).filter(Product.id == book_id).first()
+        if product:
+            product.subcategory = data.get('school')
+            if data.get('grade_level'):
+                product.grade_level = data.get('grade_level')
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "Book not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/schools/manage/book/{book_id}/arrival")
+async def set_arrival_status(book_id: int, request: Request, db: Session = Depends(get_db)):
+    """Set book arrival status and date"""
+    try:
+        data = await request.json()
+        product = db.query(Product).filter(Product.id == book_id).first()
+        if product:
+            product.arrival_status = data.get('status', 'in_stock')
+            if data.get('date'):
+                product.expected_arrival = datetime.strptime(data['date'], '%Y-%m-%d')
+            else:
+                product.expected_arrival = None
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "Book not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/schools/manage/book/{book_id}/arrived")
+async def mark_book_arrived(book_id: int, db: Session = Depends(get_db)):
+    """Mark book as arrived (back in stock)"""
+    try:
+        product = db.query(Product).filter(Product.id == book_id).first()
+        if product:
+            product.arrival_status = 'in_stock'
+            product.expected_arrival = None
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "Book not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/schools/manage/book/{book_id}/remove")
+async def remove_book_from_school(book_id: int, db: Session = Depends(get_db)):
+    """Remove book from school (keep as regular product)"""
+    try:
+        product = db.query(Product).filter(Product.id == book_id).first()
+        if product:
+            product.is_school = False
+            product.subcategory = None
+            product.grade_level = None
+            db.commit()
+            return JSONResponse({"success": True})
+        return JSONResponse({"success": False, "error": "Book not found"})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.get("/api/products/search")
+async def api_products_search(q: str = Query(None, min_length=2), db: Session = Depends(get_db)):
+    """Search products API for school management"""
+    if not q:
+        return {"products": []}
+
+    products = db.query(Product).filter(
+        or_(
+            Product.item_name.ilike(f"%{q}%"),
+            Product.item_code.ilike(f"%{q}%")
+        )
+    ).limit(20).all()
+
+    return {"products": [{"id": p.id, "item_name": p.item_name, "subcategory": p.subcategory} for p in products]}
 
 
 if __name__ == "__main__":
