@@ -468,14 +468,29 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
     # Get all settings
     db_settings = {s.setting_key: s.setting_value for s in db.query(BotSettings).all()}
 
-    # Get license info
-    license_info = {
-        "license_key": db_settings.get("license_key", "Not registered yet"),
-        "license_status": db_settings.get("license_status", "unknown"),
-        "license_expiry": db_settings.get("license_expiry", ""),
-        "registered_domain": db_settings.get("registered_domain", "")
-    }
-    
+    # Get actual license info from validator
+    try:
+        import asyncio
+        license_result = asyncio.get_event_loop().run_until_complete(license_validator.validate())
+        license_basic = license_validator.get_license_info()
+        license_info = {
+            "license_key": license_basic.get("license_key", "Not registered yet"),
+            "license_status": "Active" if license_result.get("valid") else "Invalid",
+            "license_type": "Paid" if license_result.get("is_paid") else ("Trial" if license_result.get("is_trial") else "Unknown"),
+            "license_expiry": license_result.get("expires_at", ""),
+            "days_left": license_result.get("days_left", 0),
+            "registered_domain": license_basic.get("domain", "")
+        }
+    except Exception as e:
+        license_info = {
+            "license_key": "Error loading license",
+            "license_status": "Unknown",
+            "license_type": "Unknown",
+            "license_expiry": "",
+            "days_left": 0,
+            "registered_domain": ""
+        }
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "user": user,
