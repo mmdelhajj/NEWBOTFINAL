@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+{% block title %}Settings - WhatsBot{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-gear"></i> Settings</h2>
+</div>
+
+{% if request.query_params.get('saved') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> Settings saved successfully!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if request.query_params.get('password_changed') %}
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="bi bi-check-circle"></i> Password changed successfully!
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show">
+    <i class="bi bi-exclamation-circle"></i> {{ request.query_params.get('error') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Change Password -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-lock"></i> Change Admin Password</div>
+    <div class="card-body">
+        <form method="post" action="/settings/change-password">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Current Password</label>
+                    <input type="password" class="form-control" name="current_password" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">New Password</label>
+                    <input type="password" class="form-control" name="new_password" required minlength="6">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Confirm Password</label>
+                    <input type="password" class="form-control" name="confirm_password" required minlength="6">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-whatsapp">
+                <i class="bi bi-lock"></i> Change Password
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Store Information -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-shop"></i> Store Information (Bot Responses)</div>
+    <div class="card-body">
+        <p class="text-muted mb-3">This information is shown to customers when they ask about store hours, location, or contact info.</p>
+        <form method="post" action="/settings/store-info">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Store Name</label>
+                    <input type="text" class="form-control" name="store_name" value="{{ db_settings.get('store_name', '') }}" placeholder="Librairie Memoires">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Address</label>
+                    <input type="text" class="form-control" name="store_address" value="{{ db_settings.get('store_address', '') }}" placeholder="Main Road, Beirut">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Phone Number</label>
+                    <input type="text" class="form-control" name="store_phone" value="{{ db_settings.get('store_phone', '') }}" placeholder="+961 1 123 456">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">WhatsApp Number</label>
+                    <input type="text" class="form-control" name="store_whatsapp" value="{{ db_settings.get('store_whatsapp', '') }}" placeholder="+961 70 123 456">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Instagram</label>
+                    <input type="text" class="form-control" name="store_instagram" value="{{ db_settings.get('store_instagram', '') }}" placeholder="@storename">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Website</label>
+                    <input type="url" class="form-control" name="store_website" value="{{ db_settings.get('store_website', '') }}" placeholder="https://example.com">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Google Maps URL</label>
+                    <input type="url" class="form-control" name="store_location_url" value="{{ db_settings.get('store_location_url', '') }}" placeholder="https://maps.app.goo.gl/...">
+                </div>
+            </div>
+
+            <h6 class="mt-3 mb-3"><i class="bi bi-clock"></i> Opening Hours</h6>
+            <div class="row">
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Monday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_monday" value="{{ db_settings.get('hours_monday', '') }}" placeholder="08:00-20:00">
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Tuesday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_tuesday" value="{{ db_settings.get('hours_tuesday', '') }}" placeholder="08:00-20:00">
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Wednesday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_wednesday" value="{{ db_settings.get('hours_wednesday', '') }}" placeholder="08:00-20:00">
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Thursday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_thursday" value="{{ db_settings.get('hours_thursday', '') }}" placeholder="08:00-20:00">
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Friday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_friday" value="{{ db_settings.get('hours_friday', '') }}" placeholder="08:00-20:00">
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Saturday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_saturday" value="{{ db_settings.get('hours_saturday', '') }}" placeholder="08:00-19:00">
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="form-label">Sunday</label>
+                    <input type="text" class="form-control form-control-sm" name="hours_sunday" value="{{ db_settings.get('hours_sunday', '') }}" placeholder="Closed">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-whatsapp mt-3">
+                <i class="bi bi-save"></i> Save Store Information
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- License Info -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-key"></i> License Information</div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4">
+                <label class="form-label">Status</label>
+                {% if license_info.get('license_key') and license_info.license_key != 'Not registered yet' %}
+                <input type="text" class="form-control bg-success text-white" value="Valid" readonly>
+                {% else %}
+                <input type="text" class="form-control bg-warning" value="Not Registered" readonly>
+                {% endif %}
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">License Key</label>
+                <input type="text" class="form-control" value="{{ license_info.get('license_key', 'Not configured') }}" readonly>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Domain</label>
+                <input type="text" class="form-control" value="{{ license_info.get('domain', '') }}" readonly>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- API Settings -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-plug"></i> API Configuration</div>
+    <div class="card-body">
+        <form method="post" action="/settings/api">
+            <h6 class="mb-3"><i class="bi bi-database"></i> Brains ERP API</h6>
+            <div class="row mb-4">
+                <div class="col-md-12 mb-3">
+                    <label class="form-label">Brains API Base URL</label>
+                    <input type="url" class="form-control" name="brains_api_base" value="{{ db_settings.get('brains_api_base', settings.BRAINS_API_BASE) }}" placeholder="http://194.126.6.162:1980/Api">
+                    <small class="text-muted">Base URL for Brains ERP API</small>
+                </div>
+            </div>
+
+            <h6 class="mb-3"><i class="bi bi-whatsapp"></i> WhatsApp API (ProxSMS)</h6>
+            <div class="row mb-4">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">WhatsApp Account ID</label>
+                    <input type="text" class="form-control" name="whatsapp_account_id" value="{{ db_settings.get('whatsapp_account_id', '') }}" placeholder="Account ID">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">WhatsApp Send Secret</label>
+                    <input type="password" class="form-control" name="whatsapp_send_secret" value="{{ db_settings.get('whatsapp_send_secret', '') }}" placeholder="Send Secret">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Webhook Secret</label>
+                    <input type="password" class="form-control" name="webhook_secret" value="{{ db_settings.get('webhook_secret', '') }}" placeholder="Webhook Secret">
+                </div>
+            </div>
+
+            <h6 class="mb-3"><i class="bi bi-robot"></i> Claude AI API</h6>
+            <div class="row mb-4">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Anthropic API Key</label>
+                    <input type="password" class="form-control" name="anthropic_api_key" value="{{ db_settings.get('anthropic_api_key', '') }}" placeholder="sk-ant-...">
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Model</label>
+                    <select class="form-select" name="anthropic_model">
+                        <option value="claude-3-haiku-20240307" {% if db_settings.get('anthropic_model', 'claude-3-haiku-20240307') == 'claude-3-haiku-20240307' %}selected{% endif %}>Claude 3 Haiku (Fast)</option>
+                        <option value="claude-3-sonnet-20240229" {% if db_settings.get('anthropic_model') == 'claude-3-sonnet-20240229' %}selected{% endif %}>Claude 3 Sonnet</option>
+                        <option value="claude-3-opus-20240229" {% if db_settings.get('anthropic_model') == 'claude-3-opus-20240229' %}selected{% endif %}>Claude 3 Opus</option>
+                    </select>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Max Tokens</label>
+                    <input type="number" class="form-control" name="anthropic_max_tokens" value="{{ db_settings.get('anthropic_max_tokens', '512') }}" min="100" max="4096">
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-whatsapp">
+                <i class="bi bi-save"></i> Save API Settings
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- System Settings -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-sliders"></i> System Settings</div>
+    <div class="card-body">
+        <form method="post" action="/settings/system">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Timezone</label>
+                    <select class="form-select" name="timezone">
+                        <option value="Asia/Beirut" {% if db_settings.get('timezone', 'Asia/Beirut') == 'Asia/Beirut' %}selected{% endif %}>Asia/Beirut</option>
+                        <option value="Asia/Dubai" {% if db_settings.get('timezone') == 'Asia/Dubai' %}selected{% endif %}>Asia/Dubai</option>
+                        <option value="Europe/London" {% if db_settings.get('timezone') == 'Europe/London' %}selected{% endif %}>Europe/London</option>
+                        <option value="America/New_York" {% if db_settings.get('timezone') == 'America/New_York' %}selected{% endif %}>America/New_York</option>
+                        <option value="UTC" {% if db_settings.get('timezone') == 'UTC' %}selected{% endif %}>UTC</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Currency</label>
+                    <input type="text" class="form-control" name="currency" value="{{ db_settings.get('currency', 'LBP') }}" maxlength="5" placeholder="LBP">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Sync Interval (minutes)</label>
+                    <select class="form-select" name="sync_interval">
+                        <option value="15" {% if db_settings.get('sync_interval', '240') == '15' %}selected{% endif %}>Every 15 Minutes</option>
+                        <option value="30" {% if db_settings.get('sync_interval') == '30' %}selected{% endif %}>Every 30 Minutes</option>
+                        <option value="60" {% if db_settings.get('sync_interval') == '60' %}selected{% endif %}>Every 1 Hour</option>
+                        <option value="120" {% if db_settings.get('sync_interval') == '120' %}selected{% endif %}>Every 2 Hours</option>
+                        <option value="240" {% if db_settings.get('sync_interval') == '240' %}selected{% endif %}>Every 4 Hours (Recommended)</option>
+                        <option value="720" {% if db_settings.get('sync_interval') == '720' %}selected{% endif %}>Every 12 Hours</option>
+                        <option value="1440" {% if db_settings.get('sync_interval') == '1440' %}selected{% endif %}>Once Daily</option>
+                    </select>
+                    <small class="text-muted">How often to sync products from Brains ERP</small>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-whatsapp">
+                <i class="bi bi-save"></i> Save System Settings
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Bot Messages -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-chat-left-text"></i> Bot Messages</div>
+    <div class="card-body">
+        <form method="post" action="/settings/messages">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Welcome Message (English)</label>
+                    <textarea class="form-control" name="welcome_message_en" rows="3">{{ db_settings.get('welcome_message_en', 'Welcome! How can I help you today?') }}</textarea>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Welcome Message (Arabic)</label>
+                    <textarea class="form-control" name="welcome_message_ar" rows="3" dir="rtl">{{ db_settings.get('welcome_message_ar', 'مرحبا! كيف يمكنني مساعدتك؟') }}</textarea>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Out of Stock Message (EN)</label>
+                    <textarea class="form-control" name="out_of_stock_en" rows="2">{{ db_settings.get('out_of_stock_en', 'Sorry, this item is currently out of stock.') }}</textarea>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Out of Stock Message (AR)</label>
+                    <textarea class="form-control" name="out_of_stock_ar" rows="2" dir="rtl">{{ db_settings.get('out_of_stock_ar', 'عذرا، هذا المنتج غير متوفر حاليا.') }}</textarea>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-whatsapp">
+                <i class="bi bi-save"></i> Save Messages
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- System Info -->
+<div class="card">
+    <div class="card-header"><i class="bi bi-info-circle"></i> System Information</div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <strong>Version:</strong><br>
+                {{ settings.BOT_VERSION }}
+            </div>
+            <div class="col-md-3">
+                <strong>Domain:</strong><br>
+                {{ settings.SITE_DOMAIN }}
+            </div>
+            <div class="col-md-3">
+                <strong>Host:</strong><br>
+                {{ settings.HOST }}:{{ settings.PORT }}
+            </div>
+            <div class="col-md-3">
+                <strong>Debug Mode:</strong><br>
+                {% if settings.DEBUG %}
+                <span class="badge bg-warning">Enabled</span>
+                {% else %}
+                <span class="badge bg-secondary">Disabled</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

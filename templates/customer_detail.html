@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Customer {{ customer.phone }} - WhatsBot{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/customers" class="text-muted"><i class="bi bi-arrow-left"></i> Back to Customers</a>
+        <h2 class="mt-2"><i class="bi bi-person"></i> {{ customer.name or customer.phone }}</h2>
+    </div>
+    <form method="post" action="/customers/{{ customer.id }}/block">
+        <button type="submit" class="btn {% if customer.is_blocked %}btn-success{% else %}btn-danger{% endif %}">
+            {% if customer.is_blocked %}
+            <i class="bi bi-unlock"></i> Unblock
+            {% else %}
+            <i class="bi bi-lock"></i> Block
+            {% endif %}
+        </button>
+    </form>
+</div>
+
+<div class="row">
+    <!-- Customer Info -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-info-circle"></i> Customer Info</div>
+            <div class="card-body">
+                <p><strong>Phone:</strong> {{ customer.phone }}</p>
+                <p><strong>Name:</strong> {{ customer.name or '-' }}</p>
+                <p><strong>Email:</strong> {{ customer.email or '-' }}</p>
+                <p><strong>Address:</strong> {{ customer.address or '-' }}</p>
+                <p><strong>Language:</strong> {{ customer.preferred_language or 'en' }}</p>
+                <p><strong>Brains Code:</strong> {{ customer.brains_account_code or '-' }}</p>
+                <p><strong>Balance:</strong> {{ customer.balance or 0 }}</p>
+                <p><strong>Joined:</strong> {{ customer.created_at.strftime('%d/%m/%Y') if customer.created_at else '-' }}</p>
+                <p>
+                    <strong>Status:</strong>
+                    {% if customer.is_blocked %}
+                    <span class="badge bg-danger">Blocked</span>
+                    {% else %}
+                    <span class="badge bg-success">Active</span>
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+
+        <!-- Orders -->
+        <div class="card mt-4">
+            <div class="card-header"><i class="bi bi-cart"></i> Orders ({{ orders|length }})</div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr><th>Order</th><th>Status</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for order in orders %}
+                        <tr>
+                            <td><a href="/orders/{{ order.id }}">{{ order.order_number }}</a></td>
+                            <td><span class="badge bg-{% if order.status == 'delivered' %}success{% elif order.status == 'pending' %}warning{% else %}secondary{% endif %}">{{ order.status }}</span></td>
+                            <td>{{ "%.2f"|format(order.total_amount) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-muted text-center">No orders</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="col-md-8 mb-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-chat-dots"></i> Conversation History</div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                {% for msg in messages %}
+                <div class="message-bubble {% if msg.direction == 'RECEIVED' %}message-received{% else %}message-sent{% endif %}">
+                    <small class="text-muted">
+                        {% if msg.direction == 'RECEIVED' %}
+                        <i class="bi bi-arrow-down-left text-primary"></i> Received
+                        {% else %}
+                        <i class="bi bi-arrow-up-right text-success"></i> Sent
+                        {% endif %}
+                        - {{ msg.created_at.strftime('%d/%m %H:%M') if msg.created_at else '' }}
+                    </small>
+                    <div style="white-space: pre-wrap;">{{ msg.message }}</div>
+                </div>
+                {% else %}
+                <p class="text-center text-muted">No messages yet</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

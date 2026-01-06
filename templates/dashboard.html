@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - WhatsBot{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2"></i> Dashboard</h2>
+    <span class="badge bg-success">{{ settings.STORE_NAME }}</span>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-number">{{ stats.total_customers }}</div>
+                    <div>Customers</div>
+                </div>
+                <i class="bi bi-people" style="font-size: 2.5rem; opacity: 0.5;"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card orders">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-number">{{ stats.total_orders }}</div>
+                    <div>Orders ({{ stats.pending_orders }} pending)</div>
+                </div>
+                <i class="bi bi-cart" style="font-size: 2.5rem; opacity: 0.5;"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card products">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-number">{{ stats.total_products }}</div>
+                    <div>Products</div>
+                </div>
+                <i class="bi bi-box" style="font-size: 2.5rem; opacity: 0.5;"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card messages">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-number">{{ stats.today_messages }}</div>
+                    <div>Messages Today</div>
+                </div>
+                <i class="bi bi-chat-dots" style="font-size: 2.5rem; opacity: 0.5;"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Recent Orders -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-cart"></i> Recent Orders</span>
+                <a href="/orders" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Status</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in recent_orders %}
+                        <tr>
+                            <td><a href="/orders/{{ order.id }}">{{ order.order_number }}</a></td>
+                            <td>
+                                <span class="badge
+                                    {% if order.status == 'pending' %}bg-warning
+                                    {% elif order.status == 'confirmed' %}bg-info
+                                    {% elif order.status == 'delivered' %}bg-success
+                                    {% elif order.status == 'cancelled' %}bg-danger
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ order.status }}
+                                </span>
+                            </td>
+                            <td>{{ "%.2f"|format(order.total_amount) }}</td>
+                            <td>{{ order.created_at.strftime('%d/%m %H:%M') if order.created_at else '' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted py-3">No orders yet</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Messages -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-chat-dots"></i> Recent Messages</span>
+                <a href="/messages" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                {% for msg in recent_messages %}
+                <div class="message-bubble {% if msg.direction == 'RECEIVED' %}message-received{% else %}message-sent{% endif %}">
+                    <small class="text-muted">
+                        {% if msg.direction == 'RECEIVED' %}
+                        <i class="bi bi-arrow-down-left text-primary"></i>
+                        {% else %}
+                        <i class="bi bi-arrow-up-right text-success"></i>
+                        {% endif %}
+                        {{ msg.created_at.strftime('%H:%M') if msg.created_at else '' }}
+                    </small>
+                    <div>{{ msg.message[:100] }}{% if msg.message|length > 100 %}...{% endif %}</div>
+                </div>
+                {% else %}
+                <p class="text-center text-muted py-3">No messages yet</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- License Info -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-shield-check"></i> License Information
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <strong>License Key:</strong><br>
+                        <code>{{ license_info.license_key }}</code>
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Domain:</strong><br>
+                        {{ license_info.domain }}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Server:</strong><br>
+                        {{ license_info.server }}
+                    </div>
+                    <div class="col-md-3">
+                        <strong>Version:</strong><br>
+                        {{ settings.BOT_VERSION }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

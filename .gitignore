@@ -1,0 +1,33 @@
+# Virtual environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment files (sensitive)
+.env
+
+# Build files
+dist/
+build/
+nuitka_build/
+*.egg-info/
+
+# Data files (large)
+data/
+images/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite3
