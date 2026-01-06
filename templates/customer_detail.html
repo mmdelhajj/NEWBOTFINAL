@@ -6,15 +6,31 @@
         <a href="/customers" class="text-muted"><i class="bi bi-arrow-left"></i> Back to Customers</a>
         <h2 class="mt-2"><i class="bi bi-person"></i> {{ customer.name or customer.phone }}</h2>
     </div>
-    <form method="post" action="/customers/{{ customer.id }}/block">
-        <button type="submit" class="btn {% if customer.is_blocked %}btn-success{% else %}btn-danger{% endif %}">
-            {% if customer.is_blocked %}
-            <i class="bi bi-unlock"></i> Unblock
+    <div class="btn-group">
+        <button type="button" class="btn {% if customer.bot_paused_until and customer.bot_paused_until > now %}btn-warning{% else %}btn-outline-warning{% endif %}" onclick="toggleBot()">
+            <i class="bi bi-robot"></i>
+            {% if customer.bot_paused_until and customer.bot_paused_until > now %}
+            Bot Paused
             {% else %}
-            <i class="bi bi-lock"></i> Block
+            Agent Takeover
             {% endif %}
         </button>
-    </form>
+        <button type="button" class="btn btn-outline-danger" onclick="deleteChat()">
+            <i class="bi bi-trash"></i> Delete Chat
+        </button>
+        <button type="button" class="btn btn-danger" onclick="deleteCustomer()">
+            <i class="bi bi-person-x"></i> Delete Customer
+        </button>
+        <form method="post" action="/customers/{{ customer.id }}/block" style="display:inline;">
+            <button type="submit" class="btn {% if customer.is_blocked %}btn-success{% else %}btn-danger{% endif %}">
+                {% if customer.is_blocked %}
+                <i class="bi bi-unlock"></i> Unblock
+                {% else %}
+                <i class="bi bi-lock"></i> Block
+                {% endif %}
+            </button>
+        </form>
+    </div>
 </div>
 
 <div class="row">
@@ -69,25 +85,155 @@
     <!-- Messages -->
     <div class="col-md-8 mb-4">
         <div class="card">
-            <div class="card-header"><i class="bi bi-chat-dots"></i> Conversation History</div>
-            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
-                {% for msg in messages %}
-                <div class="message-bubble {% if msg.direction == 'RECEIVED' %}message-received{% else %}message-sent{% endif %}">
-                    <small class="text-muted">
-                        {% if msg.direction == 'RECEIVED' %}
-                        <i class="bi bi-arrow-down-left text-primary"></i> Received
-                        {% else %}
-                        <i class="bi bi-arrow-up-right text-success"></i> Sent
-                        {% endif %}
-                        - {{ msg.created_at.strftime('%d/%m %H:%M') if msg.created_at else '' }}
-                    </small>
-                    <div style="white-space: pre-wrap;">{{ msg.message }}</div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-chat-dots"></i> Conversation</span>
+                <small class="text-muted" id="lastUpdate">Auto-refresh ON</small>
+            </div>
+            <div class="card-body" id="messagesContainer" style="height: 450px; overflow-y: auto; display: flex; flex-direction: column;">
+                <!-- Messages will be loaded here -->
+            </div>
+            <div class="card-footer">
+                <div class="input-group">
+                    <textarea class="form-control" id="replyMessage" rows="1" placeholder="Type message and press Enter..." onkeydown="handleKeyPress(event)"></textarea>
+                    <button type="button" class="btn btn-primary" id="sendBtn" onclick="sendMessage()">
+                        <i class="bi bi-send"></i>
+                    </button>
                 </div>
-                {% else %}
-                <p class="text-center text-muted">No messages yet</p>
-                {% endfor %}
             </div>
         </div>
     </div>
 </div>
+
+<script>
+let lastMessageCount = 0;
+let refreshInterval;
+
+// Load messages on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadMessages();
+    refreshInterval = setInterval(loadMessages, 3000); // Refresh every 3 seconds
+    document.getElementById('replyMessage').focus();
+});
+
+function loadMessages() {
+    fetch('/customers/{{ customer.id }}/messages')
+        .then(r => r.json())
+        .then(data => {
+            const container = document.getElementById('messagesContainer');
+            const shouldScroll = (container.scrollTop + container.clientHeight >= container.scrollHeight - 50) || lastMessageCount !== data.messages.length;
+
+            if (data.messages.length === 0) {
+                container.innerHTML = '<p class="text-center text-muted m-auto">No messages yet</p>';
+            } else {
+                let html = '';
+                data.messages.forEach(msg => {
+                    const isReceived = msg.direction === 'RECEIVED';
+                    html += `<div class="message-bubble ${isReceived ? 'message-received' : 'message-sent'}" style="margin-bottom: 10px;">
+                        <small class="text-muted">
+                            ${isReceived ? '<i class="bi bi-arrow-down-left text-primary"></i> Received' : '<i class="bi bi-arrow-up-right text-success"></i> Sent'}
+                            - ${msg.time}
+                        </small>
+                        <div style="white-space: pre-wrap;">${escapeHtml(msg.message)}</div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            }
+
+            // Scroll to bottom if new messages or was already at bottom
+            if (shouldScroll) {
+                container.scrollTop = container.scrollHeight;
+            }
+
+            lastMessageCount = data.messages.length;
+            document.getElementById('lastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        })
+        .catch(err => {
+            document.getElementById('lastUpdate').textContent = 'Refresh error';
+        });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function handleKeyPress(event) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+    }
+}
+
+function sendMessage() {
+    const textarea = document.getElementById('replyMessage');
+    const message = textarea.value.trim();
+    if (!message) return;
+
+    const btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('message', message);
+
+    fetch('/customers/{{ customer.id }}/reply', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            textarea.value = '';
+            loadMessages(); // Refresh messages immediately
+        } else {
+            alert('Error: ' + data.error);
+        }
+        btn.disabled = false;
+        textarea.focus();
+    })
+    .catch(err => {
+        alert('Error sending message');
+        btn.disabled = false;
+    });
+}
+
+function toggleBot() {
+    fetch('/customers/{{ customer.id }}/toggle-bot', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+}
+
+function deleteChat() {
+    if (!confirm('Delete all chat history for this customer?')) return;
+    fetch('/customers/{{ customer.id }}/delete-chat', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                loadMessages();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+}
+
+function deleteCustomer() {
+    if (!confirm('DELETE this customer and ALL their data (chat, orders)? This cannot be undone!')) return;
+    clearInterval(refreshInterval);
+    fetch('/customers/{{ customer.id }}/delete', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                window.location.href = '/customers';
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+}
+</script>
 {% endblock %}

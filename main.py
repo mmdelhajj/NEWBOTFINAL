@@ -196,13 +196,15 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/customers", response_class=HTMLResponse)
-async def customers_page(request: Request, page: int = 1, search: str = None, db: Session = Depends(get_db)):
+async def customers_page(request: Request, page: int = 1, per_page: int = 50, search: str = None, db: Session = Depends(get_db)):
     """Customers management page"""
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
 
-    per_page = 20
+    # Validate per_page (allow 50, 100, 200)
+    if per_page not in [50, 100, 200]:
+        per_page = 50
     query = db.query(Customer)
 
     if search:
@@ -212,7 +214,7 @@ async def customers_page(request: Request, page: int = 1, search: str = None, db
         ))
 
     total = query.count()
-    customers = query.order_by(desc(Customer.created_at)).offset((page-1)*per_page).limit(per_page).all()
+    customers = query.order_by(desc(Customer.last_message_at)).offset((page-1)*per_page).limit(per_page).all()
     total_pages = (total + per_page - 1) // per_page
 
     return templates.TemplateResponse("customers.html", {
@@ -245,7 +247,8 @@ async def customer_detail(request: Request, customer_id: int, db: Session = Depe
         "user": user,
         "customer": customer,
         "messages": messages,
-        "orders": orders
+        "orders": orders,
+        "now": datetime.now()
     })
 
 
@@ -257,6 +260,123 @@ async def block_customer(customer_id: int, db: Session = Depends(get_db)):
         customer.is_blocked = not customer.is_blocked
         db.commit()
     return RedirectResponse(url=f"/customers/{customer_id}", status_code=302)
+
+
+@app.post("/customers/{customer_id}/reply")
+async def reply_to_customer(
+    customer_id: int,
+    message: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Send reply to customer via WhatsApp"""
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return JSONResponse({"success": False, "error": "Customer not found"})
+
+    try:
+        # Send message via ProxSMS
+        result = await proxsms.send_message(customer.phone, message)
+
+        if result.get('success'):
+            # Save message to database
+            new_message = Message(
+                customer_id=customer_id,
+                message=message,
+                direction='SENT'
+            )
+            db.add(new_message)
+            db.commit()
+            return JSONResponse({"success": True})
+        else:
+            return JSONResponse({"success": False, "error": result.get('error', 'Failed to send')})
+    except Exception as e:
+        logger.error(f"Reply error: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.get("/customers/{customer_id}/messages")
+async def get_customer_messages(
+    customer_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get messages for live polling"""
+    messages = db.query(Message).filter(Message.customer_id == customer_id).order_by(Message.created_at).all()
+    return JSONResponse({
+        "messages": [
+            {
+                "id": m.id,
+                "message": m.message or "",
+                "direction": m.direction,
+                "time": m.created_at.strftime("%d/%m %H:%M") if m.created_at else ""
+            }
+            for m in messages
+        ]
+    })
+
+
+@app.post("/customers/{customer_id}/toggle-bot")
+async def toggle_bot_for_customer(
+    customer_id: int,
+    db: Session = Depends(get_db)
+):
+    """Toggle bot auto-reply for customer (5 hour pause)"""
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return JSONResponse({"success": False, "error": "Customer not found"})
+
+    now = datetime.now()
+
+    if customer.bot_paused_until and customer.bot_paused_until > now:
+        # Bot is paused - resume it
+        customer.bot_paused_until = None
+        db.commit()
+        return JSONResponse({"success": True, "paused": False, "message": "Bot resumed"})
+    else:
+        # Pause bot for 5 hours
+        customer.bot_paused_until = now + timedelta(hours=5)
+        db.commit()
+        return JSONResponse({"success": True, "paused": True, "message": "Bot paused for 5 hours"})
+
+
+@app.post("/customers/{customer_id}/delete-chat")
+async def delete_customer_chat(
+    customer_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete all messages for a customer"""
+    try:
+        db.query(Message).filter(Message.customer_id == customer_id).delete()
+        db.commit()
+        return JSONResponse({"success": True})
+    except Exception as e:
+        logger.error(f"Delete chat error: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
+
+@app.post("/customers/{customer_id}/delete")
+async def delete_customer(
+    customer_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete customer and all their data"""
+    try:
+        # Delete messages
+        db.query(Message).filter(Message.customer_id == customer_id).delete()
+        # Delete conversation state
+        db.query(ConversationState).filter(ConversationState.customer_id == customer_id).delete()
+        # Delete order items for customer's orders
+        order_ids = [o.id for o in db.query(Order).filter(Order.customer_id == customer_id).all()]
+        if order_ids:
+            db.query(OrderItem).filter(OrderItem.order_id.in_(order_ids)).delete(synchronize_session=False)
+        # Delete orders
+        db.query(Order).filter(Order.customer_id == customer_id).delete()
+        # Delete customer
+        db.query(Customer).filter(Customer.id == customer_id).delete()
+        db.commit()
+        return JSONResponse({"success": True})
+    except Exception as e:
+        logger.error(f"Delete customer error: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
 
 
 @app.get("/products", response_class=HTMLResponse)
@@ -556,6 +676,15 @@ class MessageProcessor:
             if customer.is_blocked:
                 logger.info(f"Blocked customer {phone} tried to message")
                 return {'success': True, 'customer_id': customer.id, 'blocked': True}
+
+            # Check if bot is paused for this customer (agent takeover)
+            if customer.bot_paused_until and customer.bot_paused_until > datetime.now():
+                logger.info(f"Bot paused for customer {phone} until {customer.bot_paused_until}")
+                # Still save the message but don't auto-reply
+                self._save_message(customer.id, message, 'RECEIVED', attachment)
+                customer.last_message_at = datetime.now()
+                self.db.commit()
+                return {'success': True, 'customer_id': customer.id, 'bot_paused': True}
 
             self._save_message(customer.id, message, 'RECEIVED', attachment)
             state = self._get_conversation_state(customer.id)

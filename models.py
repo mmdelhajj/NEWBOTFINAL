@@ -33,6 +33,7 @@ class Customer(Base):
     # Status
     is_active = Column(Boolean, default=True)
     is_blocked = Column(Boolean, default=False)
+    bot_paused_until = Column(DateTime, nullable=True)  # Pause bot auto-reply until this time
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.now)
