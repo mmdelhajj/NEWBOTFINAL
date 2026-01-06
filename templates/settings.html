@@ -265,6 +265,10 @@
                     <textarea class="form-control" name="welcome_message_ar" rows="3" dir="rtl">{{ db_settings.get('welcome_message_ar', 'مرحبا! كيف يمكنني مساعدتك؟') }}</textarea>
                 </div>
                 <div class="col-md-6 mb-3">
+                    <label class="form-label">Welcome Message (French)</label>
+                    <textarea class="form-control" name="welcome_message_fr" rows="3">{{ db_settings.get('welcome_message_fr', 'Bienvenue! Comment puis-je vous aider?') }}</textarea>
+                </div>
+                <div class="col-md-6 mb-3">
                     <label class="form-label">Out of Stock Message (EN)</label>
                     <textarea class="form-control" name="out_of_stock_en" rows="2">{{ db_settings.get('out_of_stock_en', 'Sorry, this item is currently out of stock.') }}</textarea>
                 </div>

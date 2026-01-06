@@ -99,6 +99,11 @@ app = FastAPI(
 SECRET_KEY = getattr(settings, 'SECRET_KEY', 'whatsbot-secret-key-default')
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
+# Mount static files for product images
+IMAGES_DIR = os.path.join(os.path.dirname(__file__), 'images', 'products', 'SfitemPicture')
+if os.path.exists(IMAGES_DIR):
+    app.mount("/product-images", StaticFiles(directory=IMAGES_DIR), name="product-images")
+
 # Constants
 PRODUCTS_PER_PAGE = 10
 ADMIN_USER = getattr(settings, 'ADMIN_USER', 'admin')
@@ -273,6 +278,10 @@ async def reply_to_customer(
     if not customer:
         return JSONResponse({"success": False, "error": "Customer not found"})
 
+    # Check minimum message length (ProxSMS requires at least 5 chars)
+    if len(message.strip()) < 5:
+        return JSONResponse({"success": False, "error": "Message must be at least 5 characters"})
+
     try:
         # Send message via ProxSMS
         result = await proxsms.send_message(customer.phone, message)
@@ -380,13 +389,15 @@ async def delete_customer(
 
 
 @app.get("/products", response_class=HTMLResponse)
-async def products_page(request: Request, page: int = 1, search: str = None, db: Session = Depends(get_db)):
+async def products_page(request: Request, page: int = 1, per_page: int = 50, search: str = None, db: Session = Depends(get_db)):
     """Products management page"""
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login", status_code=302)
 
-    per_page = 20
+    # Validate per_page (allow 50, 100, 200)
+    if per_page not in [50, 100, 200]:
+        per_page = 50
     query = db.query(Product)
 
     if search:
@@ -404,6 +415,7 @@ async def products_page(request: Request, page: int = 1, search: str = None, db:
         "user": user,
         "products": products,
         "page": page,
+        "per_page": per_page,
         "total_pages": total_pages,
         "search": search or "",
         "total": total
@@ -717,10 +729,23 @@ class MessageProcessor:
             return {'success': False, 'error': str(e)}
 
     def _find_or_create_customer(self, phone: str) -> Customer:
-        normalized = re.sub(r'[^0-9]', '', phone)[-8:]
+        # Normalize phone: remove non-digits, handle Lebanon country code
+        digits = re.sub(r'[^0-9]', '', phone)
+
+        # Handle Lebanon format: +961XXXXXXX -> 0XXXXXXX
+        if digits.startswith('961') and len(digits) >= 10:
+            # +9613080203 -> 03080203 (add leading 0)
+            local_number = '0' + digits[3:]
+        elif digits.startswith('0'):
+            local_number = digits
+        else:
+            local_number = digits
+
+        # Search by last 7 digits (core number without prefix)
+        search_digits = re.sub(r'[^0-9]', '', local_number)[-7:]
 
         customer = self.db.query(Customer).filter(
-            Customer.phone.contains(normalized)
+            Customer.phone.contains(search_digits)
         ).first()
 
         if not customer:
@@ -791,6 +816,20 @@ class MessageProcessor:
 
         if self._is_greeting(message_lower):
             self._set_conversation_state(customer.id, 'idle')
+            # Build personalized greeting for returning customers
+            greeting = ""
+            if customer.name:
+                # Personalized greeting for known customers
+                greeting = self._get_personalized_greeting(customer.name, lang)
+
+            # Check for custom welcome message from database settings
+            custom_welcome = self._get_custom_welcome_message(lang)
+            if custom_welcome:
+                if greeting:
+                    return f"{greeting}\n\n{custom_welcome}"
+                return custom_welcome
+
+            # Fall back to template
             return ResponseTemplates.welcome(lang, customer.name)
 
         if self._is_help_request(message_lower):
@@ -867,6 +906,28 @@ class MessageProcessor:
         words = message.lower().split()
         # Also check the whole message for Arabic greetings (might not split well)
         return any(g in words for g in greetings) or any(g in message for g in ['مرحبا', 'سلام', 'اهلا', 'هلا'])
+
+    def _get_custom_welcome_message(self, lang: str) -> Optional[str]:
+        """Get custom welcome message from database settings"""
+        lang_key_map = {
+            'en': 'welcome_message_en',
+            'ar': 'welcome_message_ar',
+            'fr': 'welcome_message_fr'
+        }
+        key = lang_key_map.get(lang, 'welcome_message_en')
+        setting = self.db.query(BotSettings).filter(BotSettings.setting_key == key).first()
+        if setting and setting.setting_value and setting.setting_value.strip():
+            return setting.setting_value.strip()
+        return None
+
+    def _get_personalized_greeting(self, customer_name: str, lang: str) -> str:
+        """Get personalized greeting for returning customers"""
+        greetings = {
+            'ar': f"مرحباً بعودتك {customer_name}! 👋",
+            'en': f"Welcome back {customer_name}! 👋",
+            'fr': f"Bon retour {customer_name}! 👋"
+        }
+        return greetings.get(lang, greetings['en'])
 
     def _is_help_request(self, message: str) -> bool:
         # Check for whole words only
@@ -1572,7 +1633,7 @@ async def save_message_settings(request: Request, db: Session = Depends(get_db))
         return RedirectResponse(url="/login", status_code=302)
 
     form = await request.form()
-    message_fields = ['welcome_message_en', 'welcome_message_ar', 'out_of_stock_en', 'out_of_stock_ar']
+    message_fields = ['welcome_message_en', 'welcome_message_ar', 'welcome_message_fr', 'out_of_stock_en', 'out_of_stock_ar']
 
     for key in message_fields:
         value = form.get(key, '')

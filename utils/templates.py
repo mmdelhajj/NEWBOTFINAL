@@ -208,15 +208,9 @@ Tapez: "compte" ou "solde"
     def ask_name(lang: str, product_name: str) -> str:
         """Ask for customer name"""
         messages = {
-            'ar': f"""✅ اخترت: *{product_name}*
-
-👤 الرجاء إدخال اسمك الكامل:""",
-            'en': f"""✅ You selected: *{product_name}*
-
-👤 Please enter your full name:""",
-            'fr': f"""✅ Vous avez sélectionné: *{product_name}*
-
-👤 Veuillez entrer votre nom complet:"""
+            'ar': "👤 الرجاء إدخال اسمك الكامل:",
+            'en': "👤 Please enter your full name:",
+            'fr': "👤 Veuillez entrer votre nom complet:"
         }
         return messages.get(lang, messages['en'])
 
