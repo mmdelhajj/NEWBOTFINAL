@@ -1075,21 +1075,53 @@ class MessageProcessor:
         return None
 
     def _check_custom_qa(self, message: str, lang: str) -> Optional[str]:
-        message_lower = message.lower()
+        message_lower = message.lower().strip()
+        message_words = set(message_lower.split())
 
         qa_items = self.db.query(CustomQA).filter(
             CustomQA.is_active == True
-        ).all()
+        ).order_by(desc(CustomQA.priority)).all()
+
+        best_match = None
+        best_score = 0
+        best_keyword = ""
 
         for qa in qa_items:
             keywords = [k.strip().lower() for k in qa.keywords.split(',')]
-            if any(k in message_lower for k in keywords):
-                if lang == 'ar' and qa.answer_ar:
-                    return qa.answer_ar
-                elif lang == 'fr' and qa.answer_fr:
-                    return qa.answer_fr
+
+            for keyword in keywords:
+                score = 0
+
+                # Exact phrase match (highest priority)
+                if keyword == message_lower or keyword.rstrip('?') == message_lower.rstrip('?'):
+                    score = 100
+                # Full keyword phrase is contained in message
+                elif keyword in message_lower:
+                    # Score based on keyword length (longer = more specific = better)
+                    score = len(keyword)
                 else:
-                    return qa.answer_en
+                    # Word-based matching - count matching words
+                    keyword_words = set(keyword.split())
+                    matching_words = message_words & keyword_words
+                    # Need at least 2 matching words or 50% of keyword words
+                    if len(matching_words) >= 2 or (len(keyword_words) > 0 and len(matching_words) / len(keyword_words) >= 0.5):
+                        score = len(matching_words) * 5
+
+                if score > best_score:
+                    best_score = score
+                    best_match = qa
+                    best_keyword = keyword
+
+        logger.info(f"Q&A MATCH: message='{message_lower}', best_score={best_score}, keyword='{best_keyword}'")
+
+        # Only return if we have a decent match (score > 10 means at least a few words matched)
+        if best_match and best_score >= 10:
+            if lang == 'ar' and best_match.answer_ar:
+                return best_match.answer_ar
+            elif lang == 'fr' and best_match.answer_fr:
+                return best_match.answer_fr
+            else:
+                return best_match.answer_en
 
         return None
 
