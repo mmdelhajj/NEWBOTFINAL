@@ -46,6 +46,9 @@
                         {% endif %}
                     </td>
                     <td>
+                        <a href="/qa/{{ qa.id }}/edit" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-pencil"></i>
+                        </a>
                         <form method="post" action="/qa/{{ qa.id }}/toggle" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-outline-{% if qa.is_active %}warning{% else %}success{% endif %}">
                                 {% if qa.is_active %}<i class="bi bi-pause"></i>{% else %}<i class="bi bi-play"></i>{% endif %}

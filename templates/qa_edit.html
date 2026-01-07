@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Edit Q&A - WhatsBot{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/qa" class="text-muted"><i class="bi bi-arrow-left"></i> Back to Q&A</a>
+        <h2 class="mt-2"><i class="bi bi-pencil"></i> Edit Q&A</h2>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" action="/qa/{{ qa.id }}/edit">
+            <div class="mb-3">
+                <label class="form-label">Keywords (comma separated)</label>
+                <input type="text" class="form-control" name="keywords" value="{{ qa.keywords }}" required
+                       placeholder="e.g., delivery, shipping, توصيل">
+                <small class="text-muted">Messages containing any of these keywords will trigger this response</small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Answer (English) *</label>
+                <textarea class="form-control" name="answer_en" rows="4" required>{{ qa.answer_en }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Answer (Arabic)</label>
+                <textarea class="form-control" name="answer_ar" rows="4" dir="rtl">{{ qa.answer_ar or '' }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Answer (French)</label>
+                <textarea class="form-control" name="answer_fr" rows="4">{{ qa.answer_fr or '' }}</textarea>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Category</label>
+                    <input type="text" class="form-control" name="category" value="{{ qa.category or '' }}" placeholder="e.g., Shipping">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Priority</label>
+                    <input type="number" class="form-control" name="priority" value="{{ qa.priority }}">
+                    <small class="text-muted">Higher priority Q&As are checked first</small>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-whatsapp">
+                    <i class="bi bi-save"></i> Save Changes
+                </button>
+                <a href="/qa" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

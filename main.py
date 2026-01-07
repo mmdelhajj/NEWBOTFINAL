@@ -590,6 +590,48 @@ async def toggle_qa(qa_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/qa", status_code=302)
 
 
+@app.get("/qa/{qa_id}/edit", response_class=HTMLResponse)
+async def edit_qa_page(qa_id: int, request: Request, db: Session = Depends(get_db)):
+    """Edit Q&A page"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    qa = db.query(CustomQA).filter(CustomQA.id == qa_id).first()
+    if not qa:
+        return RedirectResponse(url="/qa", status_code=302)
+
+    return templates.TemplateResponse("qa_edit.html", {
+        "request": request,
+        "user": user,
+        "qa": qa
+    })
+
+
+@app.post("/qa/{qa_id}/edit")
+async def update_qa(
+    qa_id: int,
+    keywords: str = Form(...),
+    answer_en: str = Form(...),
+    answer_ar: str = Form(None),
+    answer_fr: str = Form(None),
+    category: str = Form(None),
+    priority: int = Form(0),
+    db: Session = Depends(get_db)
+):
+    """Update Q&A entry"""
+    qa = db.query(CustomQA).filter(CustomQA.id == qa_id).first()
+    if qa:
+        qa.keywords = keywords
+        qa.answer_en = answer_en
+        qa.answer_ar = answer_ar
+        qa.answer_fr = answer_fr
+        qa.category = category
+        qa.priority = priority
+        db.commit()
+    return RedirectResponse(url="/qa", status_code=302)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     """Settings page"""
@@ -1000,7 +1042,7 @@ class MessageProcessor:
             names = day_names.get(lang, day_names['en'])
             hours_lines = []
             for i, day in enumerate(days):
-                hours = db_settings.get(f'store_hours_{day}', '')
+                hours = db_settings.get(f'hours_{day}', '')
                 if hours:
                     hours_lines.append(f"{names[i]}: {hours}")
             if hours_lines:
