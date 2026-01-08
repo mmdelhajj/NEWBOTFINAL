@@ -4,12 +4,33 @@ Loads from environment variables
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file
-env_path = Path(__file__).parent / '.env'
-load_dotenv(env_path)
+# Load .env file - check multiple locations for compiled binary support
+def find_env_file():
+    """Find .env file in various locations"""
+    possible_paths = [
+        Path.cwd() / '.env',                    # Current working directory
+        Path(__file__).parent / '.env',         # Script directory (development)
+        Path('/opt/whatsbot/.env'),             # Fixed install location
+        Path.home() / '.whatsbot' / '.env',     # User home directory
+    ]
+
+    # For compiled binary, also check the executable's directory
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).parent
+        possible_paths.insert(0, exe_dir / '.env')
+
+    for path in possible_paths:
+        if path.exists():
+            return path
+    return None
+
+env_path = find_env_file()
+if env_path:
+    load_dotenv(env_path)
 
 
 class Settings:
