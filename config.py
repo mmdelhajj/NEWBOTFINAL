@@ -78,6 +78,10 @@ class Settings:
     HOST: str = os.getenv('HOST', '0.0.0.0')
     PORT: int = int(os.getenv('PORT', '8000'))
 
+    # Admin Dashboard
+    ADMIN_USER: str = os.getenv('ADMIN_USER', 'admin')
+    ADMIN_PASS: str = os.getenv('ADMIN_PASS', 'admin123')
+
 
 # Global settings instance
 settings = Settings()

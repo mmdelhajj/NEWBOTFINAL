@@ -856,6 +856,25 @@ class MessageProcessor:
     async def _route_message(self, customer: Customer, message: str, lang: str, state: str) -> str:
         message_lower = message.lower().strip()
 
+        # Check for order inquiry FIRST (even before greeting)
+        # This handles "hello my order", "hi cancel order", etc.
+        if self._is_order_inquiry(message_lower):
+            # Check if it's a cancel request
+            cancel_keywords = ['cancel', 'الغاء', 'elghe', 'annuler']
+            is_cancel = any(k in message_lower for k in cancel_keywords)
+            return self._handle_order_inquiry(customer, lang, cancel_mode=is_cancel)
+
+        # Check for store info questions (hours, location, etc.) before greeting
+        store_response = self._check_store_info_questions(message, lang)
+        if store_response:
+            return store_response
+
+        # Check for Q&A before greeting (handles "hi do you have delivery?" etc.)
+        qa_response = self._check_custom_qa(message, lang)
+        if qa_response:
+            return qa_response
+
+        # Now check for pure greetings (only if no question was detected)
         if self._is_greeting(message_lower):
             self._set_conversation_state(customer.id, 'idle')
             # Build personalized greeting for returning customers
@@ -883,20 +902,18 @@ class MessageProcessor:
         if self._is_balance_inquiry(message_lower):
             return self._handle_balance_inquiry(customer, lang)
 
-        store_response = self._check_store_info_questions(message, lang)
-        if store_response:
-            return store_response
-
-        qa_response = self._check_custom_qa(message, lang)
-        if qa_response:
-            return qa_response
-
         if state in ['browsing_products', 'awaiting_product_selection']:
             # If message is a number, handle product selection
             # Otherwise, treat it as a new search
             if message.strip().isdigit():
                 return await self._handle_product_selection(customer.id, message, lang)
             # Not a number - fall through to search
+
+        if state == 'awaiting_product_confirm':
+            return await self._handle_product_confirm(customer.id, message, lang)
+
+        if state == 'awaiting_address_choice':
+            return await self._handle_address_choice(customer.id, message, lang)
 
         if state == 'awaiting_quantity':
             return await self._handle_quantity_input(customer.id, message, lang)
@@ -909,6 +926,9 @@ class MessageProcessor:
 
         if state == 'awaiting_order_confirm':
             return await self._handle_order_confirm(customer.id, message, lang)
+
+        if state == 'awaiting_order_cancel':
+            return self._handle_order_cancel_input(customer, message, lang)
 
         search_result = await self._quick_product_search(customer.id, message, lang)
         if search_result:
@@ -934,7 +954,8 @@ class MessageProcessor:
         return await self._handle_with_ai(customer, message, lang)
 
     def _is_greeting(self, message: str) -> bool:
-        # Check for whole words only (not substrings like "hi" in "chimie")
+        # Only treat SHORT messages as greetings
+        # If message contains a question or is long, don't treat as greeting
         greetings = [
             # English
             'hi', 'hello', 'hey', 'start',
@@ -946,6 +967,18 @@ class MessageProcessor:
             'مرحبا', 'سلام', 'اهلا', 'هلا', 'صباح', 'مساء'
         ]
         words = message.lower().split()
+
+        # If message has more than 3 words, it's probably a question, not just a greeting
+        if len(words) > 3:
+            return False
+
+        # If message contains question indicators, it's a question not a greeting
+        question_indicators = ['?', 'what', 'when', 'where', 'how', 'time', 'open', 'close', 'price', 'cost', 'have', 'do you']
+        message_lower = message.lower()
+        if any(q in message_lower for q in question_indicators):
+            return False
+
+        # Check for whole words only (not substrings like "hi" in "chimie")
         # Also check the whole message for Arabic greetings (might not split well)
         return any(g in words for g in greetings) or any(g in message for g in ['مرحبا', 'سلام', 'اهلا', 'هلا'])
 
@@ -988,6 +1021,199 @@ class MessageProcessor:
         keywords = ['balance', 'account', 'solde', 'compte']
         words = message.lower().split()
         return any(k in words for k in keywords)
+
+    def _is_order_inquiry(self, message: str) -> bool:
+        """Check if message is asking about order status or actions"""
+        message_lower = message.lower()
+        # Keywords that indicate order inquiry or action
+        order_keywords = [
+            'my order', 'order status', 'where is my order', 'track order',
+            'order tracking', 'check order', 'my orders', 'pending order',
+            'cancel order', 'cancel my order', 'change order', 'change my order',
+            'modify order', 'modify my order', 'update order', 'update my order',
+            'order cancel', 'order change', 'order modify', 'order update',
+            'طلبي', 'طلبيتي', 'وين طلبي', 'تتبع الطلب', 'الغاء الطلب', 'تعديل الطلب',
+            'talabi', 'talabiteh', 'talabeh', 'talabiti', 'wein talabi',
+            'cancel talabi', 'change talabi', 'badde elghe talabi',
+            'ma commande', 'mes commandes', 'suivi commande', 'annuler commande'
+        ]
+        for keyword in order_keywords:
+            if keyword in message_lower:
+                return True
+        # Also check if "order" with action/possessive words
+        words = message_lower.split()
+        if 'order' in words and any(w in words for w in ['my', 'check', 'status', 'where', 'track', 'cancel', 'change', 'modify', 'update']):
+            return True
+        return False
+
+    def _handle_order_inquiry(self, customer: Customer, lang: str, cancel_mode: bool = False) -> str:
+        """Show customer's orders with status, or handle cancellation"""
+        orders = self.db.query(Order).filter(
+            Order.customer_id == customer.id
+        ).order_by(Order.created_at.desc()).limit(5).all()
+
+        if not orders:
+            messages = {
+                'en': "📦 You don't have any orders yet.\n\nWould you like to browse our products? Just type what you're looking for!",
+                'ar': "📦 ليس لديك أي طلبات بعد.\n\nهل تريد تصفح منتجاتنا؟ اكتب ما تبحث عنه!",
+                'fr': "📦 Vous n'avez pas encore de commandes.\n\nVoulez-vous parcourir nos produits? Tapez ce que vous cherchez!"
+            }
+            return messages.get(lang, messages['en'])
+
+        # Status translations and emojis
+        status_display = {
+            'pending': {'en': '⏳ Pending', 'ar': '⏳ قيد الانتظار', 'fr': '⏳ En attente'},
+            'confirmed': {'en': '✅ Confirmed', 'ar': '✅ مؤكد', 'fr': '✅ Confirmé'},
+            'preparing': {'en': '📦 Preparing', 'ar': '📦 جاري التحضير', 'fr': '📦 En préparation'},
+            'on_the_way': {'en': '🚚 On the way', 'ar': '🚚 في الطريق', 'fr': '🚚 En route'},
+            'delivered': {'en': '✅ Delivered', 'ar': '✅ تم التوصيل', 'fr': '✅ Livré'},
+            'cancelled': {'en': '❌ Cancelled', 'ar': '❌ ملغي', 'fr': '❌ Annulé'},
+            'out_of_stock': {'en': '⚠️ Out of stock', 'ar': '⚠️ نفذ من المخزون', 'fr': '⚠️ Rupture de stock'}
+        }
+
+        # Cancellable statuses
+        cancellable_statuses = ['pending', 'confirmed', 'preparing']
+
+        # Check if this is a cancel request
+        if cancel_mode:
+            cancellable_orders = [o for o in orders if o.status in cancellable_statuses]
+
+            if not cancellable_orders:
+                messages = {
+                    'en': "❌ You don't have any orders that can be cancelled.\n\nOrders that are already on the way or delivered cannot be cancelled.",
+                    'ar': "❌ ليس لديك طلبات يمكن إلغاؤها.\n\nالطلبات التي في الطريق أو تم توصيلها لا يمكن إلغاؤها.",
+                    'fr': "❌ Vous n'avez aucune commande pouvant être annulée.\n\nLes commandes en route ou livrées ne peuvent pas être annulées."
+                }
+                return messages.get(lang, messages['en'])
+
+            headers = {
+                'en': "🗑️ *Select order to cancel:*\n",
+                'ar': "🗑️ *اختر الطلب للإلغاء:*\n",
+                'fr': "🗑️ *Sélectionnez la commande à annuler:*\n"
+            }
+            response = headers.get(lang, headers['en'])
+
+            # Store cancellable order IDs for state
+            order_ids = []
+            for i, order in enumerate(cancellable_orders, 1):
+                status_info = status_display.get(order.status, {'en': order.status})
+                status_text = status_info.get(lang, status_info['en'])
+                items = self.db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+                item_count = sum(item.quantity for item in items)
+
+                response += f"\n*{i}.* #{order.order_number}\n"
+                response += f"   Status: {status_text}\n"
+                response += f"   Items: {item_count} | Total: {order.total_amount:,.0f} LBP\n"
+                order_ids.append(order.id)
+
+            # Set state for cancellation
+            self._set_conversation_state(customer.id, 'awaiting_order_cancel', {'order_ids': order_ids})
+
+            footer = {
+                'en': "\n➡️ Type number to cancel (e.g., 1)\n❌ Type 'no' to go back",
+                'ar': "\n➡️ اكتب الرقم للإلغاء (مثال: 1)\n❌ اكتب 'لا' للعودة",
+                'fr': "\n➡️ Tapez le numéro pour annuler (ex: 1)\n❌ Tapez 'non' pour revenir"
+            }
+            response += footer.get(lang, footer['en'])
+            return response
+
+        # Normal order display
+        headers = {
+            'en': "📦 *Your Orders:*\n",
+            'ar': "📦 *طلباتك:*\n",
+            'fr': "📦 *Vos commandes:*\n"
+        }
+
+        response = headers.get(lang, headers['en'])
+
+        for order in orders:
+            status_info = status_display.get(order.status, {'en': order.status, 'ar': order.status, 'fr': order.status})
+            status_text = status_info.get(lang, status_info['en'])
+
+            # Get order items
+            items = self.db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+            item_count = sum(item.quantity for item in items)
+
+            response += f"\n*#{order.order_number}*\n"
+            response += f"   Status: {status_text}\n"
+            response += f"   Items: {item_count}\n"
+            response += f"   Total: {order.total_amount:,.0f} LBP\n"
+            if order.created_at:
+                response += f"   Date: {order.created_at.strftime('%d/%m/%Y')}\n"
+
+        response += "\n💬 To cancel an order, type 'cancel order'"
+        return response
+
+    def _handle_order_cancel_input(self, customer: Customer, message: str, lang: str) -> str:
+        """Handle order cancellation selection"""
+        message_lower = message.lower().strip()
+
+        # Check if user wants to go back
+        if message_lower in ['no', 'non', 'لا', 'la', 'back', 'cancel']:
+            self._set_conversation_state(customer.id, 'idle')
+            messages = {
+                'en': "✅ Cancelled. Your orders remain unchanged.",
+                'ar': "✅ تم الإلغاء. طلباتك لم تتغير.",
+                'fr': "✅ Annulé. Vos commandes restent inchangées."
+            }
+            return messages.get(lang, messages['en'])
+
+        # Get the state data
+        state_obj = self.db.query(ConversationState).filter(
+            ConversationState.customer_id == customer.id
+        ).first()
+
+        if not state_obj or not state_obj.data or 'order_ids' not in state_obj.data:
+            self._set_conversation_state(customer.id, 'idle')
+            return self._handle_order_inquiry(customer, lang, cancel_mode=True)
+
+        order_ids = state_obj.data['order_ids']
+
+        # Check if input is a valid number
+        if not message.strip().isdigit():
+            messages = {
+                'en': "❌ Please enter a number (e.g., 1) or type 'no' to go back.",
+                'ar': "❌ الرجاء إدخال رقم (مثال: 1) أو اكتب 'لا' للعودة.",
+                'fr': "❌ Veuillez entrer un numéro (ex: 1) ou tapez 'non' pour revenir."
+            }
+            return messages.get(lang, messages['en'])
+
+        selection = int(message.strip())
+
+        if selection < 1 or selection > len(order_ids):
+            messages = {
+                'en': f"❌ Please enter a number between 1 and {len(order_ids)}.",
+                'ar': f"❌ الرجاء إدخال رقم بين 1 و {len(order_ids)}.",
+                'fr': f"❌ Veuillez entrer un numéro entre 1 et {len(order_ids)}."
+            }
+            return messages.get(lang, messages['en'])
+
+        # Get the order and cancel it
+        order_id = order_ids[selection - 1]
+        order = self.db.query(Order).filter(Order.id == order_id).first()
+
+        if not order:
+            self._set_conversation_state(customer.id, 'idle')
+            messages = {
+                'en': "❌ Order not found. Please try again.",
+                'ar': "❌ الطلب غير موجود. حاول مرة أخرى.",
+                'fr': "❌ Commande non trouvée. Veuillez réessayer."
+            }
+            return messages.get(lang, messages['en'])
+
+        # Cancel the order
+        order.status = 'cancelled'
+        order.updated_at = datetime.now()
+        self.db.commit()
+
+        self._set_conversation_state(customer.id, 'idle')
+
+        messages = {
+            'en': f"✅ Order #{order.order_number} has been cancelled successfully.\n\nTotal refund: {order.total_amount:,.0f} LBP\n\nThank you for shopping with us!",
+            'ar': f"✅ تم إلغاء الطلب #{order.order_number} بنجاح.\n\nالمبلغ المسترد: {order.total_amount:,.0f} ل.ل\n\nشكراً لتسوقك معنا!",
+            'fr': f"✅ La commande #{order.order_number} a été annulée avec succès.\n\nRemboursement total: {order.total_amount:,.0f} LBP\n\nMerci de votre visite!"
+        }
+        return messages.get(lang, messages['en'])
 
     def _check_store_info_questions(self, message: str, lang: str) -> Optional[str]:
         """Check for store info questions and return database settings"""
@@ -1076,7 +1302,8 @@ class MessageProcessor:
 
     def _check_custom_qa(self, message: str, lang: str) -> Optional[str]:
         message_lower = message.lower().strip()
-        message_words = set(message_lower.split())
+        # Clean message words (remove punctuation)
+        message_words = set(re.sub(r'[^\w\s]', '', message_lower).split())
 
         qa_items = self.db.query(CustomQA).filter(
             CustomQA.is_active == True
@@ -1091,17 +1318,22 @@ class MessageProcessor:
 
             for keyword in keywords:
                 score = 0
+                keyword_clean = re.sub(r'[^\w\s]', '', keyword).strip()
 
                 # Exact phrase match (highest priority)
-                if keyword == message_lower or keyword.rstrip('?') == message_lower.rstrip('?'):
+                if keyword_clean == re.sub(r'[^\w\s]', '', message_lower).strip():
                     score = 100
+                # Single keyword word that appears as whole word in message
+                elif len(keyword_clean.split()) == 1 and keyword_clean in message_words:
+                    # Important single word match - give good score
+                    score = max(15, len(keyword_clean) * 2)
                 # Full keyword phrase is contained in message
-                elif keyword in message_lower:
+                elif keyword_clean in message_lower:
                     # Score based on keyword length (longer = more specific = better)
-                    score = len(keyword)
+                    score = len(keyword_clean)
                 else:
                     # Word-based matching - count matching words
-                    keyword_words = set(keyword.split())
+                    keyword_words = set(keyword_clean.split())
                     matching_words = message_words & keyword_words
                     # Need at least 2 matching words or 50% of keyword words
                     if len(matching_words) >= 2 or (len(keyword_words) > 0 and len(matching_words) / len(keyword_words) >= 0.5):
@@ -1114,7 +1346,7 @@ class MessageProcessor:
 
         logger.info(f"Q&A MATCH: message='{message_lower}', best_score={best_score}, keyword='{best_keyword}'")
 
-        # Only return if we have a decent match (score > 10 means at least a few words matched)
+        # Only return if we have a decent match
         if best_match and best_score >= 10:
             if lang == 'ar' and best_match.answer_ar:
                 return best_match.answer_ar
@@ -1141,7 +1373,10 @@ class MessageProcessor:
 
         # Filter out common conversational words (English, French, Arabic transliterated)
         stop_words = {
-            # English
+            # Greetings (IMPORTANT: filter these out so "hello math book" searches "math book")
+            'hello', 'hi', 'hey', 'hola', 'bonjour', 'bonsoir', 'salut',
+            'marhaba', 'salam', 'ahla', 'hala', 'hey',
+            # English conversational
             'do', 'you', 'have', 'is', 'there', 'any', 'want', 'need', 'looking',
             'for', 'the', 'a', 'an', 'i', 'can', 'get', 'find', 'search', 'show',
             'me', 'please', 'would', 'like', 'are', 'does', 'it', 'of', 'to', 'in',
@@ -1338,36 +1573,176 @@ class MessageProcessor:
                         except Exception as e:
                             logger.warning(f"Failed to send product image: {e}")
 
-                    # Check if customer already has name and address
-                    if customer and customer.name and customer.address:
-                        # Customer has profile - ask for confirmation
-                        self._set_conversation_state(customer_id, 'awaiting_order_confirm', {
-                            'selected_product_id': product.id,
-                            'product_name': product.item_name,
-                            'price': product.price,
-                            'quantity': 1
-                        })
-                        # Ask for confirmation
-                        confirm_msg = {
-                            'ar': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n👤 {customer.name}\n📍 {customer.address}\n\n✅ اكتب *1* للتأكيد\n❌ اكتب *0* للإلغاء",
-                            'en': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n👤 {customer.name}\n📍 {customer.address}\n\n✅ Type *1* to confirm\n❌ Type *0* to cancel",
-                            'fr': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n👤 {customer.name}\n📍 {customer.address}\n\n✅ Tapez *1* pour confirmer\n❌ Tapez *0* pour annuler"
-                        }
-                        return confirm_msg.get(lang, confirm_msg['en'])
-                    else:
-                        # Need to collect customer info
-                        self._set_conversation_state(customer_id, 'awaiting_name', {
-                            'selected_product_id': product.id,
-                            'product_name': product.item_name,
-                            'price': product.price,
-                            'quantity': 1
-                        })
-                        return ResponseTemplates.ask_name(lang, product.item_name)
+                    # Ask if customer wants to order this product
+                    self._set_conversation_state(customer_id, 'awaiting_product_confirm', {
+                        'selected_product_id': product.id,
+                        'product_name': product.item_name,
+                        'price': product.price
+                    })
+
+                    confirm_msg = {
+                        'ar': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n✅ اكتب *1* للطلب\n🔙 اكتب *2* للعودة والبحث",
+                        'en': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n✅ Type *1* to order\n🔙 Type *2* to go back and search",
+                        'fr': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n✅ Tapez *1* pour commander\n🔙 Tapez *2* pour revenir et chercher"
+                    }
+                    return confirm_msg.get(lang, confirm_msg['en'])
 
         except ValueError:
             pass
 
         return ResponseTemplates.invalid_input(lang)
+
+    async def _handle_product_confirm(self, customer_id: int, message: str, lang: str) -> str:
+        """Handle product confirmation (1 to order, 2 to go back)"""
+        state = self.db.query(ConversationState).filter(
+            ConversationState.customer_id == customer_id
+        ).first()
+
+        if not state or not state.data.get('selected_product_id'):
+            self._set_conversation_state(customer_id, 'idle')
+            return ResponseTemplates.invalid_input(lang)
+
+        choice = message.strip()
+
+        if choice == '2' or choice.lower() in ['back', 'no', 'cancel', 'لا', 'non']:
+            # Go back - reset state
+            self._set_conversation_state(customer_id, 'idle')
+            return {
+                'ar': "🔙 تم. اكتب ما تبحث عنه للبحث عن منتج آخر.",
+                'en': "🔙 OK. Type what you're looking for to search for another product.",
+                'fr': "🔙 OK. Tapez ce que vous cherchez pour rechercher un autre produit."
+            }.get(lang, "🔙 OK. Type what you're looking for to search for another product.")
+
+        if choice != '1':
+            return {
+                'ar': "الرجاء اكتب *1* للطلب أو *2* للعودة",
+                'en': "Please type *1* to order or *2* to go back",
+                'fr': "Veuillez taper *1* pour commander ou *2* pour revenir"
+            }.get(lang, "Please type *1* to order or *2* to go back")
+
+        # Customer wants to order - proceed with order flow
+        product = self.db.query(Product).get(state.data['selected_product_id'])
+        customer = self.db.query(Customer).get(customer_id)
+
+        if not product:
+            self._set_conversation_state(customer_id, 'idle')
+            return ResponseTemplates.invalid_input(lang)
+
+        # Check what customer info we have
+        has_name = customer and customer.name
+        has_address = customer and customer.address
+
+        if has_name and has_address:
+            # Customer has saved address - ask if they want to use it or enter new one
+            self._set_conversation_state(customer_id, 'awaiting_address_choice', {
+                'selected_product_id': product.id,
+                'product_name': product.item_name,
+                'price': product.price,
+                'quantity': 1,
+                'saved_address': customer.address
+            })
+            choice_msg = {
+                'ar': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n📍 عنوانك المحفوظ:\n{customer.address}\n\n✅ اكتب *1* للإرسال لهذا العنوان\n📝 اكتب *2* لإدخال عنوان جديد",
+                'en': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n📍 Your saved address:\n{customer.address}\n\n✅ Type *1* to send to this address\n📝 Type *2* to enter a new address",
+                'fr': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n📍 Votre adresse enregistrée:\n{customer.address}\n\n✅ Tapez *1* pour envoyer à cette adresse\n📝 Tapez *2* pour entrer une nouvelle adresse"
+            }
+            return choice_msg.get(lang, choice_msg['en'])
+        elif has_name and not has_address:
+            # Has name but no address - skip to address
+            self._set_conversation_state(customer_id, 'awaiting_address', {
+                'selected_product_id': product.id,
+                'product_name': product.item_name,
+                'price': product.price,
+                'quantity': 1,
+                'customer_name': customer.name
+            })
+            return {
+                'ar': f"مرحبا {customer.name}!\n\n📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\nالرجاء إدخال عنوانك للتوصيل:",
+                'en': f"Hi {customer.name}!\n\n📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\nPlease enter your delivery address:",
+                'fr': f"Bonjour {customer.name}!\n\n📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\nVeuillez entrer votre adresse de livraison:"
+            }.get(lang, f"Hi {customer.name}!\n\nPlease enter your delivery address:")
+        else:
+            # Need to collect name first
+            self._set_conversation_state(customer_id, 'awaiting_name', {
+                'selected_product_id': product.id,
+                'product_name': product.item_name,
+                'price': product.price,
+                'quantity': 1
+            })
+            return ResponseTemplates.ask_name(lang, product.item_name)
+
+    async def _handle_address_choice(self, customer_id: int, message: str, lang: str) -> str:
+        """Handle address choice - use saved address (1) or enter new (2)"""
+        msg = message.strip()
+
+        state = self.db.query(ConversationState).filter(
+            ConversationState.customer_id == customer_id
+        ).first()
+
+        if not state or not state.data.get('selected_product_id'):
+            self._set_conversation_state(customer_id, 'idle')
+            return ResponseTemplates.invalid_input(lang)
+
+        customer = self.db.query(Customer).get(customer_id)
+        product = self.db.query(Product).get(state.data['selected_product_id'])
+        quantity = state.data.get('quantity', 1)
+
+        if msg == '1':
+            # Use saved address - create order directly
+            saved_address = state.data.get('saved_address') or customer.address
+
+            order = Order(
+                customer_id=customer_id,
+                order_number=f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}-{customer_id}",
+                total_amount=product.price * quantity,
+                status='pending',
+                delivery_address=saved_address,
+                created_at=datetime.now()
+            )
+            self.db.add(order)
+            self.db.commit()
+            self.db.refresh(order)
+
+            order_item = OrderItem(
+                order_id=order.id,
+                product_id=product.id,
+                quantity=quantity,
+                unit_price=product.price,
+                total_price=product.price * quantity
+            )
+            self.db.add(order_item)
+            self.db.commit()
+
+            self._set_conversation_state(customer_id, 'idle')
+
+            return ResponseTemplates.order_confirmation(lang, {
+                'product_name': product.item_name,
+                'customer_name': customer.name,
+                'customer_email': customer.email or '',
+                'customer_address': saved_address,
+                'quantity': quantity,
+                'price': product.price
+            })
+
+        elif msg == '2':
+            # Enter new address
+            state.state = 'awaiting_address'
+            state.data['customer_name'] = customer.name
+            self.db.commit()
+
+            return {
+                'ar': "📍 الرجاء إدخال عنوان التوصيل الجديد:",
+                'en': "📍 Please enter your new delivery address:",
+                'fr': "📍 Veuillez entrer votre nouvelle adresse de livraison:"
+            }.get(lang, "📍 Please enter your new delivery address:")
+
+        else:
+            # Invalid input - remind options
+            return {
+                'ar': "الرجاء اكتب *1* للإرسال للعنوان المحفوظ أو *2* لإدخال عنوان جديد",
+                'en': "Please type *1* to send to saved address or *2* to enter a new address",
+                'fr': "Veuillez taper *1* pour envoyer à l'adresse enregistrée ou *2* pour entrer une nouvelle adresse"
+            }.get(lang, "Please type *1* to send to saved address or *2* to enter a new address")
 
     async def _handle_quantity_input(self, customer_id: int, message: str, lang: str) -> str:
         try:
@@ -1381,10 +1756,23 @@ class MessageProcessor:
 
             if state and state.data.get('selected_product_id'):
                 state.data['quantity'] = quantity
-                state.state = 'awaiting_name'
-                self.db.commit()
 
-                return ResponseTemplates.ask_name(lang, state.data['product_name'])
+                # Check if customer already has name
+                customer = self.db.query(Customer).get(customer_id)
+                if customer and customer.name:
+                    # Skip name, go to address
+                    state.data['customer_name'] = customer.name
+                    state.state = 'awaiting_address'
+                    self.db.commit()
+                    return {
+                        'ar': f"شكرا {customer.name}!\n\nالرجاء إدخال عنوانك للتوصيل:",
+                        'en': f"Thank you {customer.name}!\n\nPlease enter your delivery address:",
+                        'fr': f"Merci {customer.name}!\n\nVeuillez entrer votre adresse de livraison:"
+                    }.get(lang, f"Thank you {customer.name}!\n\nPlease enter your delivery address:")
+                else:
+                    state.state = 'awaiting_name'
+                    self.db.commit()
+                    return ResponseTemplates.ask_name(lang, state.data['product_name'])
 
         except ValueError:
             pass
@@ -1433,6 +1821,12 @@ class MessageProcessor:
                 'en': "Please enter a valid address",
                 'fr': "Veuillez entrer une adresse valide"
             }.get(lang, "Please enter a valid address")
+
+        # Save address to customer profile for future orders
+        customer = self.db.query(Customer).get(customer_id)
+        if customer:
+            customer.address = address
+            self.db.commit()
 
         state = self.db.query(ConversationState).filter(
             ConversationState.customer_id == customer_id
