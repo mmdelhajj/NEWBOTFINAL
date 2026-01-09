@@ -85,12 +85,19 @@ class Product(Base):
     grade_level = Column(String(20), nullable=True)
     arrival_status = Column(String(20), default="in_stock")  # in_stock, coming_soon, arriving
 
+    # Product variants/family
+    family_id = Column(Integer, ForeignKey('product_families.id'), nullable=True)
+    variant_size = Column(String(50), nullable=True)  # Extracted size: "50x70cm"
+    variant_color = Column(String(50), nullable=True)  # Extracted color: "Blue"
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     # Relationships
     order_items = relationship("OrderItem", back_populates="product")
+    family = relationship("ProductFamily", back_populates="products")
+    attributes = relationship("ProductAttribute", back_populates="product")
 
 
 class Order(Base):
@@ -249,3 +256,57 @@ class School(Base):
     display_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class ProductFamily(Base):
+    """Product family for grouping variants (e.g., CardBoard, Notebook)"""
+    __tablename__ = 'product_families'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), unique=True, nullable=False)  # e.g., "CardBoard"
+    name_ar = Column(String(100), nullable=True)  # Arabic name
+
+    # What attributes this family has
+    has_sizes = Column(Boolean, default=False)  # Has size variants
+    has_colors = Column(Boolean, default=False)  # Has color variants
+
+    # Keywords to detect this family in search
+    keywords = Column(Text, nullable=True)  # Comma-separated: "cardboard,carton,كرتون"
+
+    # Order of selection: size_first or color_first
+    selection_order = Column(String(20), default='size_first')  # size_first, color_first
+
+    # Status
+    is_active = Column(Boolean, default=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    products = relationship("Product", back_populates="family")
+    attributes = relationship("ProductAttribute", back_populates="family")
+
+
+class ProductAttribute(Base):
+    """Product attributes (size, color) for a family"""
+    __tablename__ = 'product_attributes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    family_id = Column(Integer, ForeignKey('product_families.id'), nullable=False)
+    product_id = Column(Integer, ForeignKey('products.id'), nullable=True)  # Can be null for family-level attributes
+
+    # Attribute info
+    attribute_type = Column(String(50), nullable=False)  # "size" or "color"
+    attribute_value = Column(String(100), nullable=False)  # e.g., "50x70cm" or "Blue"
+    attribute_value_ar = Column(String(100), nullable=True)  # Arabic value
+
+    # For display order
+    sort_order = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.now)
+
+    # Relationships
+    family = relationship("ProductFamily", back_populates="attributes")
+    product = relationship("Product", back_populates="attributes")

@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}{{ family.name }} Products - WhatsBot{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="/families" class="text-muted"><i class="bi bi-arrow-left"></i> Back to Families</a>
+        <h2 class="mt-2"><i class="bi bi-box-seam"></i> {{ family.name }} Products</h2>
+        <p class="text-muted mb-0">
+            {% if family.has_sizes %}<span class="badge bg-info"><i class="bi bi-rulers"></i> Sizes</span>{% endif %}
+            {% if family.has_colors %}<span class="badge bg-warning text-dark"><i class="bi bi-palette"></i> Colors</span>{% endif %}
+        </p>
+    </div>
+    <div>
+        <button class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#searchProductModal">
+            <i class="bi bi-search"></i> Add Products
+        </button>
+        <button class="btn btn-whatsapp" onclick="autoExtract()">
+            <i class="bi bi-magic"></i> Auto-Extract Attributes
+        </button>
+    </div>
+</div>
+
+{% if message %}
+<div class="alert alert-{{ message_type }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="mb-0">{{ products|length }}</h3>
+                <small class="text-muted">Total Products</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="mb-0">{{ sizes|length }}</h3>
+                <small class="text-muted">Unique Sizes</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="mb-0">{{ colors|length }}</h3>
+                <small class="text-muted">Unique Colors</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sizes and Colors Summary -->
+<div class="row mb-4">
+    {% if family.has_sizes %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-rulers"></i> Sizes</div>
+            <div class="card-body">
+                {% for size, count in sizes.items() %}
+                <span class="badge bg-info me-1 mb-1">{{ size }} ({{ count }})</span>
+                {% else %}
+                <span class="text-muted">No sizes extracted yet</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if family.has_colors %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-palette"></i> Colors</div>
+            <div class="card-body">
+                {% for color, count in colors.items() %}
+                <span class="badge bg-warning text-dark me-1 mb-1">{{ color }} ({{ count }})</span>
+                {% else %}
+                <span class="text-muted">No colors extracted yet</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Products Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Product Name</th>
+                    <th>Size</th>
+                    <th>Color</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in products %}
+                <tr>
+                    <td>
+                        <strong>{{ product.item_name }}</strong>
+                        <br><small class="text-muted">{{ product.item_code }}</small>
+                    </td>
+                    <td>
+                        {% if product.variant_size %}
+                        <span class="badge bg-info">{{ product.variant_size }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if product.variant_color %}
+                        <span class="badge bg-warning text-dark">{{ product.variant_color }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ "{:,.0f}".format(product.price) }} LBP</td>
+                    <td>
+                        {% if product.stock_quantity > 0 %}
+                        <span class="badge bg-success">{{ product.stock_quantity }}</span>
+                        {% else %}
+                        <span class="badge bg-danger">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" onclick="editAttributes({{ product.id }}, '{{ product.variant_size or '' }}', '{{ product.variant_color or '' }}')" title="Edit Attributes">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <form method="post" action="/families/{{ family.id }}/products/{{ product.id }}/remove" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove from family">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        No products in this family. Use "Add Products" to search and add products.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Search Product Modal -->
+<div class="modal fade" id="searchProductModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-search"></i> Add Products to {{ family.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="productSearch" placeholder="Search products by name..." onkeyup="searchProducts()">
+                </div>
+                <div id="searchResults" style="max-height: 400px; overflow-y: auto;">
+                    <p class="text-muted text-center">Type to search products</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Attributes Modal -->
+<div class="modal fade" id="editAttributesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Product Attributes</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/families/{{ family.id }}/products/update-attributes">
+                <input type="hidden" name="product_id" id="editProductId">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label"><i class="bi bi-rulers"></i> Size</label>
+                        <input type="text" class="form-control" name="variant_size" id="editSize" placeholder="e.g., 50x70cm">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="bi bi-palette"></i> Color</label>
+                        <input type="text" class="form-control" name="variant_color" id="editColor" placeholder="e.g., Blue">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-whatsapp">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let searchTimeout;
+
+function searchProducts() {
+    clearTimeout(searchTimeout);
+    const query = document.getElementById('productSearch').value;
+    if (query.length < 2) {
+        document.getElementById('searchResults').innerHTML = '<p class="text-muted text-center">Type at least 2 characters</p>';
+        return;
+    }
+
+    searchTimeout = setTimeout(() => {
+        fetch(`/families/{{ family.id }}/search-products?q=${encodeURIComponent(query)}`)
+            .then(r => r.json())
+            .then(data => {
+                let html = '';
+                if (data.products.length === 0) {
+                    html = '<p class="text-muted text-center">No products found</p>';
+                } else {
+                    data.products.forEach(p => {
+                        const inFamily = p.family_id === {{ family.id }};
+                        html += `
+                            <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                                <div>
+                                    <strong>${p.item_name}</strong>
+                                    <br><small class="text-muted">${p.item_code} | Stock: ${p.stock_quantity}</small>
+                                </div>
+                                <div>
+                                    ${inFamily ?
+                                        '<span class="badge bg-success">Already added</span>' :
+                                        `<form method="post" action="/families/{{ family.id }}/products/add" class="d-inline">
+                                            <input type="hidden" name="product_id" value="${p.id}">
+                                            <button type="submit" class="btn btn-sm btn-whatsapp">
+                                                <i class="bi bi-plus"></i> Add
+                                            </button>
+                                        </form>`
+                                    }
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                document.getElementById('searchResults').innerHTML = html;
+            });
+    }, 300);
+}
+
+function editAttributes(productId, size, color) {
+    document.getElementById('editProductId').value = productId;
+    document.getElementById('editSize').value = size;
+    document.getElementById('editColor').value = color;
+    new bootstrap.Modal(document.getElementById('editAttributesModal')).show();
+}
+
+function autoExtract() {
+    if (confirm('Auto-extract size and color from product names? This will overwrite existing values.')) {
+        window.location.href = '/families/{{ family.id }}/auto-extract';
+    }
+}
+</script>
+{% endblock %}

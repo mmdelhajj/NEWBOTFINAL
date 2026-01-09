@@ -21,7 +21,7 @@ from sqlalchemy import create_engine, or_, and_, func, desc, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from config import settings
-from models import Base, Customer, Product, Order, OrderItem, Message, ConversationState, CustomQA, Settings as BotSettings, School
+from models import Base, Customer, Product, Order, OrderItem, Message, ConversationState, CustomQA, Settings as BotSettings, School, ProductFamily, ProductAttribute
 from services.claude_ai import ClaudeAI
 from services.proxsms import ProxSMSService
 from services.brains_api import BrainsAPI
@@ -632,6 +632,283 @@ async def update_qa(
     return RedirectResponse(url="/qa", status_code=302)
 
 
+# ==================== PRODUCT FAMILIES ROUTES ====================
+
+@app.get("/families", response_class=HTMLResponse)
+async def families_page(request: Request, db: Session = Depends(get_db)):
+    """Product families management page"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    families = db.query(ProductFamily).order_by(ProductFamily.name).all()
+
+    # Add product count for each family
+    for family in families:
+        family.product_count = db.query(Product).filter(Product.family_id == family.id).count()
+
+    return templates.TemplateResponse("families.html", {
+        "request": request,
+        "user": user,
+        "families": families,
+        "message": request.query_params.get("message"),
+        "message_type": request.query_params.get("type", "success")
+    })
+
+
+@app.post("/families/add")
+async def add_family(
+    request: Request,
+    name: str = Form(...),
+    name_ar: str = Form(None),
+    keywords: str = Form(None),
+    has_sizes: bool = Form(False),
+    has_colors: bool = Form(False),
+    selection_order: str = Form("size_first"),
+    db: Session = Depends(get_db)
+):
+    """Add new product family"""
+    family = ProductFamily(
+        name=name,
+        name_ar=name_ar,
+        keywords=keywords,
+        has_sizes=has_sizes,
+        has_colors=has_colors,
+        selection_order=selection_order,
+        is_active=True
+    )
+    db.add(family)
+    db.commit()
+    return RedirectResponse(url=f"/families?message=Family '{name}' created&type=success", status_code=302)
+
+
+@app.get("/families/{family_id}/edit", response_class=HTMLResponse)
+async def edit_family_page(family_id: int, request: Request, db: Session = Depends(get_db)):
+    """Edit family page"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    family = db.query(ProductFamily).filter(ProductFamily.id == family_id).first()
+    if not family:
+        return RedirectResponse(url="/families", status_code=302)
+
+    return templates.TemplateResponse("family_edit.html", {
+        "request": request,
+        "user": user,
+        "family": family
+    })
+
+
+@app.post("/families/{family_id}/edit")
+async def update_family(
+    family_id: int,
+    name: str = Form(...),
+    name_ar: str = Form(None),
+    keywords: str = Form(None),
+    has_sizes: bool = Form(False),
+    has_colors: bool = Form(False),
+    selection_order: str = Form("size_first"),
+    db: Session = Depends(get_db)
+):
+    """Update product family"""
+    family = db.query(ProductFamily).filter(ProductFamily.id == family_id).first()
+    if family:
+        family.name = name
+        family.name_ar = name_ar
+        family.keywords = keywords
+        family.has_sizes = has_sizes
+        family.has_colors = has_colors
+        family.selection_order = selection_order
+        db.commit()
+    return RedirectResponse(url="/families", status_code=302)
+
+
+@app.post("/families/{family_id}/toggle")
+async def toggle_family(family_id: int, db: Session = Depends(get_db)):
+    """Toggle family active status"""
+    family = db.query(ProductFamily).filter(ProductFamily.id == family_id).first()
+    if family:
+        family.is_active = not family.is_active
+        db.commit()
+    return RedirectResponse(url="/families", status_code=302)
+
+
+@app.post("/families/{family_id}/delete")
+async def delete_family(family_id: int, db: Session = Depends(get_db)):
+    """Delete family and unlink products"""
+    family = db.query(ProductFamily).filter(ProductFamily.id == family_id).first()
+    if family:
+        # Unlink products
+        db.query(Product).filter(Product.family_id == family_id).update({
+            Product.family_id: None,
+            Product.variant_size: None,
+            Product.variant_color: None
+        })
+        db.delete(family)
+        db.commit()
+    return RedirectResponse(url="/families", status_code=302)
+
+
+@app.get("/families/{family_id}/products", response_class=HTMLResponse)
+async def family_products_page(family_id: int, request: Request, db: Session = Depends(get_db)):
+    """Manage products in a family"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    family = db.query(ProductFamily).filter(ProductFamily.id == family_id).first()
+    if not family:
+        return RedirectResponse(url="/families", status_code=302)
+
+    products = db.query(Product).filter(Product.family_id == family_id).order_by(Product.item_name).all()
+
+    # Calculate unique sizes and colors
+    sizes = {}
+    colors = {}
+    for p in products:
+        if p.variant_size:
+            sizes[p.variant_size] = sizes.get(p.variant_size, 0) + 1
+        if p.variant_color:
+            colors[p.variant_color] = colors.get(p.variant_color, 0) + 1
+
+    return templates.TemplateResponse("family_products.html", {
+        "request": request,
+        "user": user,
+        "family": family,
+        "products": products,
+        "sizes": sizes,
+        "colors": colors,
+        "message": request.query_params.get("message"),
+        "message_type": request.query_params.get("type", "success")
+    })
+
+
+@app.get("/families/{family_id}/search-products")
+async def search_products_for_family(family_id: int, q: str = Query(...), db: Session = Depends(get_db)):
+    """Search products to add to family"""
+    products = db.query(Product).filter(
+        or_(
+            Product.item_name.ilike(f"%{q}%"),
+            Product.item_code.ilike(f"%{q}%")
+        )
+    ).limit(20).all()
+
+    return {"products": [
+        {
+            "id": p.id,
+            "item_name": p.item_name,
+            "item_code": p.item_code,
+            "stock_quantity": p.stock_quantity,
+            "family_id": p.family_id
+        } for p in products
+    ]}
+
+
+@app.post("/families/{family_id}/products/add")
+async def add_product_to_family(
+    family_id: int,
+    product_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Add product to family"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product:
+        product.family_id = family_id
+        db.commit()
+    return RedirectResponse(url=f"/families/{family_id}/products", status_code=302)
+
+
+@app.post("/families/{family_id}/products/{product_id}/remove")
+async def remove_product_from_family(family_id: int, product_id: int, db: Session = Depends(get_db)):
+    """Remove product from family"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product:
+        product.family_id = None
+        product.variant_size = None
+        product.variant_color = None
+        db.commit()
+    return RedirectResponse(url=f"/families/{family_id}/products", status_code=302)
+
+
+@app.post("/families/{family_id}/products/update-attributes")
+async def update_product_attributes(
+    family_id: int,
+    product_id: int = Form(...),
+    variant_size: str = Form(None),
+    variant_color: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """Update product size/color attributes"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product:
+        product.variant_size = variant_size.strip() if variant_size else None
+        product.variant_color = variant_color.strip() if variant_color else None
+        db.commit()
+    return RedirectResponse(url=f"/families/{family_id}/products", status_code=302)
+
+
+@app.get("/families/{family_id}/auto-extract")
+async def auto_extract_attributes(family_id: int, request: Request, db: Session = Depends(get_db)):
+    """Auto-extract size and color from product names"""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    family = db.query(ProductFamily).filter(ProductFamily.id == family_id).first()
+    if not family:
+        return RedirectResponse(url="/families", status_code=302)
+
+    products = db.query(Product).filter(Product.family_id == family_id).all()
+
+    # Common size patterns
+    size_patterns = [
+        r'(\d+[xX]\d+(?:cm|mm|in)?)',  # 50x70cm, 50X70
+        r'(\d+(?:cm|mm|in))',  # 50cm
+        r'(A\d)',  # A4, A3
+        r'(\d+x\d+)',  # 50x70
+    ]
+
+    # Common colors (expandable)
+    known_colors = [
+        'Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Pink', 'Black', 'White',
+        'Gold', 'Silver', 'Bronze', 'Brown', 'Grey', 'Gray', 'Beige', 'Navy', 'Indigo',
+        'Violet', 'Cyan', 'Magenta', 'Turquoise', 'Cream', 'Ivory', 'Coral', 'Salmon',
+        'Maroon', 'Burgundy', 'Olive', 'Teal', 'Aqua', 'Lime', 'Sky Blue', 'Dark Red',
+        'Light Blue', 'Dark Blue', 'Light Green', 'Dark Green', 'Coffee', 'Gold Yellow',
+        'Metallic', 'Kraft', 'Brillant', 'Neon', 'Pastel', 'Matte', 'Glossy', 'Transparent'
+    ]
+
+    updated = 0
+    for product in products:
+        name = product.item_name
+
+        # Extract size
+        if family.has_sizes:
+            for pattern in size_patterns:
+                match = re.search(pattern, name, re.IGNORECASE)
+                if match:
+                    product.variant_size = match.group(1)
+                    break
+
+        # Extract color
+        if family.has_colors:
+            name_lower = name.lower()
+            for color in known_colors:
+                if color.lower() in name_lower:
+                    product.variant_color = color
+                    break
+
+        updated += 1
+
+    db.commit()
+
+    return RedirectResponse(
+        url=f"/families/{family_id}/products?message=Extracted attributes for {updated} products&type=success",
+        status_code=302
+    )
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     """Settings page"""
@@ -907,6 +1184,16 @@ class MessageProcessor:
             # Otherwise, treat it as a new search
             if message.strip().isdigit():
                 return await self._handle_product_selection(customer.id, message, lang)
+            # Not a number - fall through to search
+
+        if state == 'selecting_family_size':
+            if message.strip().isdigit():
+                return await self._handle_family_size_selection(customer.id, message, lang)
+            # Not a number - fall through to search
+
+        if state == 'selecting_family_color':
+            if message.strip().isdigit():
+                return await self._handle_family_color_selection(customer.id, message, lang)
             # Not a number - fall through to search
 
         if state == 'awaiting_product_confirm':
@@ -1491,8 +1778,283 @@ class MessageProcessor:
 
         return ResponseTemplates.product_list(lang, product_list, page, total_pages)
 
+    def _check_product_family(self, query: str) -> Optional[ProductFamily]:
+        """Check if query matches a product family by keywords"""
+        query_lower = query.lower().strip()
+
+        families = self.db.query(ProductFamily).filter(ProductFamily.is_active == True).all()
+
+        for family in families:
+            if not family.keywords:
+                continue
+
+            keywords = [k.strip().lower() for k in family.keywords.split(',')]
+            for keyword in keywords:
+                if keyword and keyword in query_lower:
+                    return family
+
+        return None
+
+    async def _handle_family_search(self, customer_id: int, family: ProductFamily, lang: str) -> str:
+        """Handle search for a product family - show sizes or colors first"""
+        # Get products in this family with stock
+        products = self.db.query(Product).filter(
+            Product.family_id == family.id,
+            Product.stock_quantity > 0
+        ).all()
+
+        if not products:
+            return {
+                'ar': f"عذراً، لا توجد منتجات متوفرة من {family.name} حالياً",
+                'en': f"Sorry, no {family.name} products available at the moment",
+                'fr': f"Désolé, aucun produit {family.name} disponible pour le moment"
+            }.get(lang, f"Sorry, no {family.name} products available at the moment")
+
+        # Determine first attribute to show based on selection_order
+        if family.selection_order == 'size_first' and family.has_sizes:
+            return self._show_family_sizes(customer_id, family, products, lang)
+        elif family.selection_order == 'color_first' and family.has_colors:
+            return self._show_family_colors(customer_id, family, products, lang)
+        elif family.has_sizes:
+            return self._show_family_sizes(customer_id, family, products, lang)
+        elif family.has_colors:
+            return self._show_family_colors(customer_id, family, products, lang)
+        else:
+            # No size/color, show products directly
+            return None
+
+    def _show_family_sizes(self, customer_id: int, family: ProductFamily, products: list, lang: str) -> str:
+        """Show available sizes for a family"""
+        # Get unique sizes with counts
+        sizes = {}
+        for p in products:
+            if p.variant_size:
+                if p.variant_size not in sizes:
+                    sizes[p.variant_size] = {'count': 0, 'colors': set()}
+                sizes[p.variant_size]['count'] += 1
+                if p.variant_color:
+                    sizes[p.variant_size]['colors'].add(p.variant_color)
+
+        if not sizes:
+            # No sizes extracted, fallback to normal search
+            return None
+
+        # Sort sizes
+        size_list = sorted(sizes.keys())
+
+        # Build message
+        msg_header = {
+            'ar': f"📦 *{family.name}*\n\n📐 اختر المقاس:\n",
+            'en': f"📦 *{family.name}*\n\n📐 Select size:\n",
+            'fr': f"📦 *{family.name}*\n\n📐 Choisissez la taille:\n"
+        }.get(lang, f"📦 *{family.name}*\n\n📐 Select size:\n")
+
+        msg_items = ""
+        for i, size in enumerate(size_list, 1):
+            color_count = len(sizes[size]['colors'])
+            color_text = {
+                'ar': f"({color_count} لون)" if color_count > 0 else "",
+                'en': f"({color_count} colors)" if color_count > 0 else "",
+                'fr': f"({color_count} couleurs)" if color_count > 0 else ""
+            }.get(lang, f"({color_count} colors)" if color_count > 0 else "")
+            msg_items += f"{i}. {size} {color_text}\n"
+
+        # Set conversation state
+        self._set_conversation_state(customer_id, 'selecting_family_size', {
+            'family_id': family.id,
+            'family_name': family.name,
+            'sizes': size_list,
+            'has_colors': family.has_colors
+        })
+
+        return msg_header + msg_items
+
+    def _show_family_colors(self, customer_id: int, family: ProductFamily, products: list, lang: str, size_filter: str = None) -> str:
+        """Show available colors for a family (optionally filtered by size)"""
+        # Get unique colors with stock counts
+        colors = {}
+        for p in products:
+            if size_filter and p.variant_size != size_filter:
+                continue
+            if p.variant_color:
+                if p.variant_color not in colors:
+                    colors[p.variant_color] = {'count': 0, 'stock': 0}
+                colors[p.variant_color]['count'] += 1
+                colors[p.variant_color]['stock'] += p.stock_quantity
+
+        if not colors:
+            # No colors extracted
+            return None
+
+        # Sort colors
+        color_list = sorted(colors.keys())
+
+        # Build message
+        size_text = f" ({size_filter})" if size_filter else ""
+        msg_header = {
+            'ar': f"📦 *{family.name}*{size_text}\n\n🎨 اختر اللون:\n",
+            'en': f"📦 *{family.name}*{size_text}\n\n🎨 Select color:\n",
+            'fr': f"📦 *{family.name}*{size_text}\n\n🎨 Choisissez la couleur:\n"
+        }.get(lang, f"📦 *{family.name}*{size_text}\n\n🎨 Select color:\n")
+
+        msg_items = ""
+        for i, color in enumerate(color_list, 1):
+            stock = colors[color]['stock']
+            stock_badge = "✅" if stock > 0 else "❌"
+            msg_items += f"{i}. {color} {stock_badge} ({stock})\n"
+
+        # Set conversation state
+        self._set_conversation_state(customer_id, 'selecting_family_color', {
+            'family_id': family.id,
+            'family_name': family.name,
+            'colors': color_list,
+            'size_filter': size_filter
+        })
+
+        return msg_header + msg_items
+
+    async def _handle_family_size_selection(self, customer_id: int, message: str, lang: str) -> str:
+        """Handle size selection for a product family"""
+        state = self.db.query(ConversationState).filter(
+            ConversationState.customer_id == customer_id
+        ).first()
+
+        if not state or not state.data.get('sizes'):
+            return ResponseTemplates.invalid_input(lang)
+
+        try:
+            selection = int(message.strip()) - 1
+            sizes = state.data['sizes']
+
+            if 0 <= selection < len(sizes):
+                selected_size = sizes[selection]
+                family_id = state.data['family_id']
+                family = self.db.query(ProductFamily).get(family_id)
+
+                if family and family.has_colors:
+                    # Show colors for this size
+                    products = self.db.query(Product).filter(
+                        Product.family_id == family_id,
+                        Product.variant_size == selected_size,
+                        Product.stock_quantity > 0
+                    ).all()
+
+                    result = self._show_family_colors(customer_id, family, products, lang, selected_size)
+                    if result:
+                        return result
+
+                # No colors, show products directly
+                products = self.db.query(Product).filter(
+                    Product.family_id == family_id,
+                    Product.variant_size == selected_size,
+                    Product.stock_quantity > 0
+                ).limit(10).all()
+
+                if products:
+                    product_list = [
+                        {
+                            'id': p.id,
+                            'item_name': p.item_name,
+                            'item_code': p.item_code,
+                            'price': p.price,
+                            'stock_quantity': p.stock_quantity
+                        }
+                        for p in products
+                    ]
+                    self._set_conversation_state(customer_id, 'browsing_products', {
+                        'products': [p.id for p in products]
+                    })
+                    return ResponseTemplates.product_list(lang, product_list, 1, 1)
+
+        except ValueError:
+            pass
+
+        return {
+            'ar': "الرجاء اختيار رقم صحيح من القائمة",
+            'en': "Please select a valid number from the list",
+            'fr': "Veuillez sélectionner un numéro valide de la liste"
+        }.get(lang, "Please select a valid number from the list")
+
+    async def _handle_family_color_selection(self, customer_id: int, message: str, lang: str) -> str:
+        """Handle color selection for a product family"""
+        state = self.db.query(ConversationState).filter(
+            ConversationState.customer_id == customer_id
+        ).first()
+
+        if not state or not state.data.get('colors'):
+            return ResponseTemplates.invalid_input(lang)
+
+        try:
+            selection = int(message.strip()) - 1
+            colors = state.data['colors']
+
+            if 0 <= selection < len(colors):
+                selected_color = colors[selection]
+                family_id = state.data['family_id']
+                size_filter = state.data.get('size_filter')
+
+                # Find the product matching size and color
+                query = self.db.query(Product).filter(
+                    Product.family_id == family_id,
+                    Product.variant_color == selected_color,
+                    Product.stock_quantity > 0
+                )
+
+                if size_filter:
+                    query = query.filter(Product.variant_size == size_filter)
+
+                product = query.first()
+
+                if product:
+                    customer = self.db.query(Customer).get(customer_id)
+
+                    # Send product image if available
+                    if product.image_url and customer:
+                        try:
+                            image_url = product.image_url
+                            if image_url.startswith('/'):
+                                image_url = f"http://109.110.185.104{image_url}"
+                            await proxsms.send_image(
+                                customer.phone,
+                                image_url,
+                                f"📦 {product.item_name}\n💰 {product.price:,.0f} LBP"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to send product image: {e}")
+
+                    # Ask if customer wants to order
+                    self._set_conversation_state(customer_id, 'awaiting_product_confirm', {
+                        'selected_product_id': product.id,
+                        'product_name': product.item_name,
+                        'price': product.price
+                    })
+
+                    confirm_msg = {
+                        'ar': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n✅ اكتب *1* للطلب\n🔙 اكتب *2* للعودة والبحث",
+                        'en': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n✅ Type *1* to order\n🔙 Type *2* to go back and search",
+                        'fr': f"📦 *{product.item_name}*\n💰 {product.price:,.0f} LBP\n\n✅ Tapez *1* pour commander\n🔙 Tapez *2* pour revenir et chercher"
+                    }
+                    return confirm_msg.get(lang, confirm_msg['en'])
+
+        except ValueError:
+            pass
+
+        return {
+            'ar': "الرجاء اختيار رقم صحيح من القائمة",
+            'en': "Please select a valid number from the list",
+            'fr': "Veuillez sélectionner un numéro valide de la liste"
+        }.get(lang, "Please select a valid number from the list")
+
     async def _quick_product_search(self, customer_id: int, query: str, lang: str) -> Optional[str]:
-        # Try SQL ILIKE search first
+        # Check for product family match first
+        family = self._check_product_family(query)
+        if family:
+            logger.info(f"FAMILY SEARCH: matched family '{family.name}'")
+            result = await self._handle_family_search(customer_id, family, lang)
+            if result:
+                return result
+
+        # Try SQL ILIKE search
         logger.info(f"QUICK SEARCH: query='{query}'")
         products = await self._search_products(query, 10)
         logger.info(f"QUICK SEARCH: found {len(products)} products")
