@@ -6,28 +6,43 @@ Handles sending messages via ProxSMS API
 import httpx
 import re
 import logging
+import time
 from typing import Optional, Dict, Any
 from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Cache for database settings (avoids creating new DB connection every message)
+_settings_cache = {}
+_cache_ttl = 300  # 5 minutes cache
+
 
 def get_db_setting(key: str, default: str = None):
-    """Get setting from database, fallback to default"""
+    """Get setting from database with caching, fallback to default"""
+    global _settings_cache
+
+    # Check cache first
+    if key in _settings_cache:
+        cached_value, cached_time = _settings_cache[key]
+        if time.time() - cached_time < _cache_ttl:
+            return cached_value
+
     try:
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
         from models import Settings
         from config import settings as app_settings
 
-        engine = create_engine(app_settings.DATABASE_URL)
+        engine = create_engine(app_settings.DATABASE_URL, pool_pre_ping=True)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         db = SessionLocal()
         setting = db.query(Settings).filter(Settings.setting_key == key).first()
         db.close()
         engine.dispose()
-        if setting and setting.setting_value:
-            return setting.setting_value
+
+        value = setting.setting_value if setting and setting.setting_value else default
+        _settings_cache[key] = (value, time.time())
+        return value
     except Exception as e:
         logger.debug(f"Could not read db setting {key}: {e}")
     return default
@@ -36,18 +51,28 @@ def get_db_setting(key: str, default: str = None):
 class ProxSMSService:
     def __init__(self):
         self.api_url = settings.WHATSAPP_API_URL
+        self._account_id = None
+        self._secret = None
+        self._cache_time = 0
+
+    def _refresh_credentials(self):
+        """Refresh credentials from DB if cache expired"""
+        if time.time() - self._cache_time > _cache_ttl:
+            self._account_id = get_db_setting('whatsapp_account_id') or settings.WHATSAPP_ACCOUNT_ID
+            self._secret = get_db_setting('whatsapp_send_secret') or settings.WHATSAPP_SEND_SECRET
+            self._cache_time = time.time()
 
     @property
     def account_id(self):
-        """Get account ID from database or .env"""
-        db_value = get_db_setting('whatsapp_account_id')
-        return db_value or settings.WHATSAPP_ACCOUNT_ID
+        """Get account ID from cache"""
+        self._refresh_credentials()
+        return self._account_id
 
     @property
     def secret(self):
-        """Get secret from database or .env"""
-        db_value = get_db_setting('whatsapp_send_secret')
-        return db_value or settings.WHATSAPP_SEND_SECRET
+        """Get secret from cache"""
+        self._refresh_credentials()
+        return self._secret
 
     async def send_message(
         self,

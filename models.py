@@ -88,7 +88,7 @@ class Product(Base):
     # Product variants/family
     family_id = Column(Integer, ForeignKey('product_families.id'), nullable=True)
     variant_size = Column(String(50), nullable=True)  # Extracted size: "50x70cm"
-    variant_color = Column(String(50), nullable=True)  # Extracted color: "Blue"
+    variant_color = Column(String(500), nullable=True)  # Extracted color: "Blue" or "Red,Gold,Yellow,..." for multi-color
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.now)

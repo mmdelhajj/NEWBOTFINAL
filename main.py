@@ -976,8 +976,26 @@ async def save_settings(request: Request, db: Session = Depends(get_db)):
 class MessageProcessor:
     """Handles message processing logic"""
 
+    # Class-level cache for settings (shared across instances)
+    _settings_cache = {}
+    _settings_cache_time = 0
+    _settings_cache_ttl = 300  # 5 minutes
+
     def __init__(self, db: Session):
         self.db = db
+
+    def _get_cached_settings(self) -> dict:
+        """Get all bot settings with caching"""
+        import time
+        now = time.time()
+        if now - MessageProcessor._settings_cache_time < MessageProcessor._settings_cache_ttl:
+            return MessageProcessor._settings_cache
+
+        # Refresh cache
+        all_settings = self.db.query(BotSettings).all()
+        MessageProcessor._settings_cache = {s.setting_key: s.setting_value or '' for s in all_settings}
+        MessageProcessor._settings_cache_time = now
+        return MessageProcessor._settings_cache
 
     async def process_incoming_message(
         self,
@@ -1270,16 +1288,17 @@ class MessageProcessor:
         return any(g in words for g in greetings) or any(g in message for g in ['مرحبا', 'سلام', 'اهلا', 'هلا'])
 
     def _get_custom_welcome_message(self, lang: str) -> Optional[str]:
-        """Get custom welcome message from database settings"""
+        """Get custom welcome message from database settings (cached)"""
         lang_key_map = {
             'en': 'welcome_message_en',
             'ar': 'welcome_message_ar',
             'fr': 'welcome_message_fr'
         }
         key = lang_key_map.get(lang, 'welcome_message_en')
-        setting = self.db.query(BotSettings).filter(BotSettings.setting_key == key).first()
-        if setting and setting.setting_value and setting.setting_value.strip():
-            return setting.setting_value.strip()
+        cached_settings = self._get_cached_settings()
+        value = cached_settings.get(key, '')
+        if value and value.strip():
+            return value.strip()
         return None
 
     def _get_personalized_greeting(self, customer_name: str, lang: str) -> str:
@@ -1506,11 +1525,8 @@ class MessageProcessor:
         """Check for store info questions and return database settings"""
         message_lower = message.lower()
 
-        # Get all settings from database
-        db_settings = {}
-        all_settings = self.db.query(BotSettings).all()
-        for s in all_settings:
-            db_settings[s.setting_key] = s.setting_value or ''
+        # Get all settings from cache (much faster)
+        db_settings = self._get_cached_settings()
 
         # Phone number question
         if re.search(r'(phone|call|رقم|هاتف|téléphone|numéro)', message_lower):
@@ -1832,8 +1848,12 @@ class MessageProcessor:
                 if p.variant_size not in sizes:
                     sizes[p.variant_size] = {'count': 0, 'colors': set()}
                 sizes[p.variant_size]['count'] += 1
+                # Expand multi-color values and count each color
                 if p.variant_color:
-                    sizes[p.variant_size]['colors'].add(p.variant_color)
+                    color_values = [c.strip() for c in p.variant_color.split(',')]
+                    for color_val in color_values:
+                        if color_val:
+                            sizes[p.variant_size]['colors'].add(color_val)
 
         if not sizes:
             # No sizes extracted, fallback to normal search
@@ -1877,10 +1897,16 @@ class MessageProcessor:
             if size_filter and p.variant_size != size_filter:
                 continue
             if p.variant_color:
-                if p.variant_color not in colors:
-                    colors[p.variant_color] = {'count': 0, 'stock': 0}
-                colors[p.variant_color]['count'] += 1
-                colors[p.variant_color]['stock'] += p.stock_quantity
+                # Expand multi-color values (like "Red,Blue,Green") into individual colors
+                color_values = [c.strip() for c in p.variant_color.split(',')]
+                for color_val in color_values:
+                    if not color_val:
+                        continue
+                    if color_val not in colors:
+                        colors[color_val] = {'count': 0, 'stock': 0, 'product_ids': []}
+                    colors[color_val]['count'] += 1
+                    colors[color_val]['stock'] += p.stock_quantity
+                    colors[color_val]['product_ids'].append(p.id)
 
         if not colors:
             # No colors extracted
@@ -1901,7 +1927,7 @@ class MessageProcessor:
         for i, color in enumerate(color_list, 1):
             stock = colors[color]['stock']
             stock_badge = "✅" if stock > 0 else "❌"
-            msg_items += f"{i}. {color} {stock_badge} ({stock})\n"
+            msg_items += f"{i}. {color} {stock_badge}\n"
 
         # Set conversation state
         self._set_conversation_state(customer_id, 'selecting_family_color', {
@@ -1994,16 +2020,32 @@ class MessageProcessor:
                 size_filter = state.data.get('size_filter')
 
                 # Find the product matching size and color
+                # First try exact match
                 query = self.db.query(Product).filter(
                     Product.family_id == family_id,
                     Product.variant_color == selected_color,
                     Product.stock_quantity > 0
                 )
-
                 if size_filter:
                     query = query.filter(Product.variant_size == size_filter)
-
                 product = query.first()
+
+                # If no exact match, search for color within multi-color products
+                if not product:
+                    from sqlalchemy import or_
+                    query = self.db.query(Product).filter(
+                        Product.family_id == family_id,
+                        Product.stock_quantity > 0,
+                        or_(
+                            Product.variant_color.like(f"{selected_color},%"),  # starts with color
+                            Product.variant_color.like(f"%,{selected_color},%"),  # middle
+                            Product.variant_color.like(f"%,{selected_color}"),  # ends with color
+                            Product.variant_color == selected_color  # exact match
+                        )
+                    )
+                    if size_filter:
+                        query = query.filter(Product.variant_size == size_filter)
+                    product = query.first()
 
                 if product:
                     customer = self.db.query(Customer).get(customer_id)

@@ -117,7 +117,14 @@
                     </td>
                     <td>
                         {% if product.variant_color %}
-                        <span class="badge bg-warning text-dark">{{ product.variant_color }}</span>
+                            {% set color_list = product.variant_color.split(',') %}
+                            {% if color_list|length == 1 %}
+                                <span class="badge bg-warning text-dark">{{ product.variant_color }}</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark" title="{{ product.variant_color }}">
+                                    <i class="bi bi-palette-fill"></i> Multi ({{ color_list|length }} colors)
+                                </span>
+                            {% endif %}
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
@@ -189,8 +196,35 @@
                         <input type="text" class="form-control" name="variant_size" id="editSize" placeholder="e.g., 50x70cm">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label"><i class="bi bi-palette"></i> Color</label>
-                        <input type="text" class="form-control" name="variant_color" id="editColor" placeholder="e.g., Blue">
+                        <label class="form-label"><i class="bi bi-palette"></i> Color(s)</label>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary w-100 text-start dropdown-toggle" type="button" id="colorDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+                                <span id="selectedColorsText">Select colors...</span>
+                            </button>
+                            <div class="dropdown-menu w-100 p-2" style="max-height: 250px; overflow-y: auto;">
+                                <div class="mb-2">
+                                    <input type="text" class="form-control form-control-sm" id="colorSearchInput" placeholder="Search colors..." onkeyup="filterColors()">
+                                </div>
+                                <div id="colorCheckboxes">
+                                    {% set available_colors = ['Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Pink', 'Black', 'White', 'Gold', 'Silver', 'Bronze', 'Brown', 'Grey', 'Beige', 'Navy', 'Indigo', 'Violet', 'Cyan', 'Magenta', 'Turquoise', 'Cream', 'Ivory', 'Coral', 'Maroon', 'Burgundy', 'Olive', 'Teal', 'Lime', 'Sky Blue', 'Dark Red', 'Light Blue', 'Dark Blue', 'Light Green', 'Dark Green', 'Coffee', 'Gold Yellow', 'Metallic', 'Kraft', 'Neon', 'Pastel', 'Matte', 'Glossy', 'Transparent', 'Assorted', 'Mixed'] %}
+                                    {% for color in available_colors %}
+                                    <div class="form-check color-option">
+                                        <input class="form-check-input color-checkbox" type="checkbox" value="{{ color }}" id="color_{{ loop.index }}" onchange="updateSelectedColors()">
+                                        <label class="form-check-label" for="color_{{ loop.index }}">{{ color }}</label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <hr class="my-2">
+                                <div class="mb-2">
+                                    <input type="text" class="form-control form-control-sm" id="customColorInput" placeholder="Add custom color...">
+                                    <button type="button" class="btn btn-sm btn-outline-primary mt-1 w-100" onclick="addCustomColor()">
+                                        <i class="bi bi-plus"></i> Add Custom Color
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" name="variant_color" id="editColor">
+                        <small class="text-muted">Select one or more colors. For single-color products, select just one.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -255,8 +289,76 @@ function searchProducts() {
 function editAttributes(productId, size, color) {
     document.getElementById('editProductId').value = productId;
     document.getElementById('editSize').value = size;
-    document.getElementById('editColor').value = color;
+
+    // Reset all checkboxes
+    document.querySelectorAll('.color-checkbox').forEach(cb => cb.checked = false);
+
+    // Set checkboxes for existing colors (comma-separated)
+    if (color) {
+        const colors = color.split(',').map(c => c.trim());
+        colors.forEach(c => {
+            const checkbox = Array.from(document.querySelectorAll('.color-checkbox')).find(cb => cb.value.toLowerCase() === c.toLowerCase());
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+    }
+
+    updateSelectedColors();
     new bootstrap.Modal(document.getElementById('editAttributesModal')).show();
+}
+
+function updateSelectedColors() {
+    const checked = Array.from(document.querySelectorAll('.color-checkbox:checked')).map(cb => cb.value);
+    const hiddenInput = document.getElementById('editColor');
+    const displayText = document.getElementById('selectedColorsText');
+
+    if (checked.length === 0) {
+        hiddenInput.value = '';
+        displayText.textContent = 'Select colors...';
+    } else if (checked.length === 1) {
+        hiddenInput.value = checked[0];
+        displayText.textContent = checked[0];
+    } else {
+        hiddenInput.value = checked.join(',');
+        displayText.textContent = checked.length + ' colors selected';
+    }
+}
+
+function filterColors() {
+    const search = document.getElementById('colorSearchInput').value.toLowerCase();
+    document.querySelectorAll('.color-option').forEach(opt => {
+        const label = opt.querySelector('label').textContent.toLowerCase();
+        opt.style.display = label.includes(search) ? '' : 'none';
+    });
+}
+
+function addCustomColor() {
+    const input = document.getElementById('customColorInput');
+    const colorName = input.value.trim();
+    if (!colorName) return;
+
+    // Check if already exists
+    const existing = Array.from(document.querySelectorAll('.color-checkbox')).find(cb => cb.value.toLowerCase() === colorName.toLowerCase());
+    if (existing) {
+        existing.checked = true;
+        updateSelectedColors();
+        input.value = '';
+        return;
+    }
+
+    // Add new checkbox
+    const container = document.getElementById('colorCheckboxes');
+    const newId = 'color_custom_' + Date.now();
+    const div = document.createElement('div');
+    div.className = 'form-check color-option';
+    div.innerHTML = `
+        <input class="form-check-input color-checkbox" type="checkbox" value="${colorName}" id="${newId}" onchange="updateSelectedColors()" checked>
+        <label class="form-check-label" for="${newId}">${colorName} <span class="badge bg-secondary">custom</span></label>
+    `;
+    container.appendChild(div);
+    updateSelectedColors();
+    input.value = '';
 }
 
 function autoExtract() {
