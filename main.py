@@ -1327,50 +1327,94 @@ class MessageProcessor:
         message_lower = message.lower().strip()
         base_url = "https://store.libmemoires.com"
 
-        # School-specific keywords (check FIRST - more specific)
-        school_mappings = {
-            'sscc': '/college-saint-coeur-kfarhbab',
-            'saint coeur': '/college-saint-coeur-kfarhbab',
-            'kfarhbab': '/college-saint-coeur-kfarhbab',
-            'كفرحباب': '/college-saint-coeur-kfarhbab',
-            'franco libanais': '/lycee-franco-libanais-nahr-ibrahim',
-            'nahr ibrahim': '/lycee-franco-libanais-nahr-ibrahim',
-            'central college': '/central-college-jounieh',
-            'libano allemand': '/lycee-libano-allemand-jounieh',
-            'allemand jounieh': '/lycee-libano-allemand-jounieh',
-            'antonine': '/antonine-sisters-school-ghazir',
-            'ghazir': '/antonine-sisters-school-ghazir',
-            'sja': '/ecole-sja-besan%C3%A7on-kfour',
-            'besancon': '/ecole-sja-besan%C3%A7on-kfour',
-            'kfour': '/ecole-sja-besan%C3%A7on-kfour',
-            'saint francois': '/ecole-saint-francois',
-        }
+        # Smart school detection - each school has multiple keywords
+        # Format: (list of keywords, url_path)
+        schools = [
+            # SSCC - College Saint Coeur Kfarhbab
+            (['sscc', 'saint coeur', 'st coeur', 'سان كور', 'القلب الاقدس',
+              'kfarhbab', 'kfar hbab', 'كفرحباب', 'كفر حباب'],
+             '/college-saint-coeur-kfarhbab'),
 
-        # Check for school keywords first
-        for keyword, path in school_mappings.items():
-            if keyword in message_lower:
-                link = f"{base_url}{path}"
+            # Lycee Franco Libanais - Nahr Ibrahim
+            (['franco libanais', 'franco liban', 'الفرنسية اللبنانية', 'فرانكو',
+              'nahr ibrahim', 'نهر ابراهيم', 'lycee franco', 'french lebanese',
+              'franco', 'libanais nahr'],
+             '/lycee-franco-libanais-nahr-ibrahim'),
+
+            # Central College Jounieh
+            (['central college', 'central jounieh', 'سنترال', 'كولج سنترال',
+              'central'],
+             '/central-college-jounieh'),
+
+            # Lycee Libano Allemand - Jounieh
+            (['libano allemand', 'libano german', 'الالمانية اللبنانية', 'المانية',
+              'allemand jounieh', 'lycee allemand', 'lycee libano', 'german school',
+              'libano', 'allemand'],
+             '/lycee-libano-allemand-jounieh'),
+
+            # Antonine Sisters School - Ghazir
+            (['antonine', 'antonian', 'انطونين', 'راهبات الانطونية',
+              'ghazir', 'غازير', 'antonine sisters', 'soeurs antonines'],
+             '/antonine-sisters-school-ghazir'),
+
+            # Ecole SJA Besançon - Kfour
+            (['sja', 'besancon', 'besançon', 'بيزانسون', 'كفور',
+              'kfour', 'ecole sja', 'سان جان'],
+             '/ecole-sja-besan%C3%A7on-kfour'),
+
+            # Ecole Saint Francois
+            (['saint francois', 'st francois', 'san francois', 'سان فرنسوا',
+              'القديس فرنسيس', 'ecole francois', 'saint francis'],
+             '/ecole-saint-francois'),
+        ]
+
+        # Check for school keywords (smarter matching)
+        for keywords, path in schools:
+            for keyword in keywords:
+                if keyword in message_lower:
+                    link = f"{base_url}{path}"
+                    return self._format_redirect_response(lang, 'school_books', link)
+
+        # If message contains "lycee" or "ecole" or "school" + other words, redirect to school books page
+        school_indicators = ['lycee', 'lycée', 'ecole', 'école', 'school', 'college', 'مدرسة', 'ليسيه', 'كلية']
+        for indicator in school_indicators:
+            if indicator in message_lower and len(message_lower) > len(indicator) + 2:
+                # It's a school query but we don't know which one - send to schools page
+                link = f"{base_url}/books"
                 return self._format_redirect_response(lang, 'school_books', link)
 
         # Category mappings (order matters - more specific first)
         category_mappings = [
             # School books (general)
-            (['school book', 'school books', 'livre scolaire', 'livres scolaires', 'كتب مدرسية', 'كتاب مدرسي'], '/books', 'school_books'),
+            (['school book', 'school books', 'livre scolaire', 'livres scolaires', 'كتب مدرسية', 'كتاب مدرسي',
+              'school supplies', 'fournitures scolaires', 'مستلزمات مدرسية', 'back to school', 'rentrée'], '/books', 'school_books'),
 
             # General books
-            (['book', 'books', 'livre', 'livres', 'كتاب', 'كتب', 'reading', 'novel', 'story'], '/books-2', 'books'),
+            (['book', 'books', 'livre', 'livres', 'كتاب', 'كتب', 'reading', 'novel', 'story', 'قصة', 'رواية',
+              'literature', 'roman', 'magazine', 'مجلة', 'dictionary', 'dictionnaire', 'قاموس'], '/books-2', 'books'),
 
-            # Toys
-            (['toy', 'toys', 'jouet', 'jouets', 'لعبة', 'العاب', 'game', 'games', 'jeu', 'jeux', 'puzzle', 'plush', 'squishmallow', 'lego', 'barbie', 'doll', 'car', 'truck', 'robot', 'dinosaur', 'action figure'], '/toys-gadgets', 'toys'),
+            # Toys - comprehensive list
+            (['toy', 'toys', 'jouet', 'jouets', 'لعبة', 'العاب', 'لعب', 'game', 'games', 'jeu', 'jeux',
+              'puzzle', 'plush', 'squishmallow', 'lego', 'barbie', 'doll', 'dolls', 'دمية',
+              'car', 'cars', 'truck', 'robot', 'dinosaur', 'action figure', 'figurine',
+              'nerf', 'hot wheels', 'playmobil', 'pokemon', 'mario', 'minecraft', 'fortnite',
+              'stuffed', 'teddy', 'bear', 'unicorn', 'princess', 'superhero', 'marvel', 'disney',
+              'frozen', 'spiderman', 'batman', 'transformer', 'paw patrol', 'peppa', 'cocomelon'], '/toys-gadgets', 'toys'),
 
-            # Writing instruments / Pens
-            (['pen', 'pens', 'stylo', 'stylos', 'قلم', 'اقلام', 'pencil', 'pencils', 'crayon', 'crayons', 'marker', 'markers', 'highlighter'], '/writing-instruments', 'pens'),
+            # Writing instruments / Pens - more keywords
+            (['pen', 'pens', 'stylo', 'stylos', 'قلم', 'اقلام', 'قلم حبر',
+              'pencil', 'pencils', 'crayon', 'crayons', 'رصاص',
+              'marker', 'markers', 'marqueur', 'فلوماستر', 'ماركر',
+              'highlighter', 'surligneur', 'هايلايتر',
+              'bic', 'pilot', 'faber', 'stabilo', 'uni', 'parker'], '/writing-instruments', 'pens'),
 
             # Stationery
-            (['stationery', 'stationary', 'fourniture', 'fournitures', 'قرطاسية', 'office', 'bureau'], '/stationary-2', 'stationery'),
+            (['stationery', 'stationary', 'fourniture', 'fournitures', 'قرطاسية', 'office', 'bureau',
+              'desk', 'مكتب', 'ادوات مكتبية', 'supplies'], '/stationary-2', 'stationery'),
 
             # Notebooks / Paper
-            (['notebook', 'notebooks', 'cahier', 'cahiers', 'دفتر', 'دفاتر', 'paper', 'papier', 'ورق'], '/notebook', 'notebooks'),
+            (['notebook', 'notebooks', 'cahier', 'cahiers', 'دفتر', 'دفاتر', 'paper', 'papier', 'ورق',
+              'sketchbook', 'notepad', 'bloc', 'feuille', 'ورقة', 'كراسة'], '/notebook', 'notebooks'),
 
             # Coloring / Art
             (['color', 'coloring', 'coloriage', 'تلوين', 'paint', 'painting', 'peinture', 'art', 'craft', 'bricolage'], '/coloring', 'coloring'),
