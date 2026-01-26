@@ -1191,6 +1191,12 @@ class MessageProcessor:
         if self._is_help_request(message_lower):
             return ResponseTemplates.help_message(lang)
 
+        # Check for website category redirect (books, toys, pens, schools, etc.)
+        website_redirect = self._check_website_redirect(message, lang)
+        if website_redirect:
+            self._set_conversation_state(customer.id, 'idle')
+            return website_redirect
+
         if self._is_product_list_request(message_lower):
             return await self._show_product_list(customer.id, lang, 1)
 
@@ -1316,9 +1322,146 @@ class MessageProcessor:
         words = message.lower().split()
         return any(w in words for w in help_words)
 
+    def _check_website_redirect(self, message: str, lang: str) -> Optional[str]:
+        """Check if message matches a category and return website link"""
+        message_lower = message.lower().strip()
+        base_url = "https://store.libmemoires.com"
+
+        # School-specific keywords (check FIRST - more specific)
+        school_mappings = {
+            'sscc': '/college-saint-coeur-kfarhbab',
+            'saint coeur': '/college-saint-coeur-kfarhbab',
+            'kfarhbab': '/college-saint-coeur-kfarhbab',
+            'كفرحباب': '/college-saint-coeur-kfarhbab',
+            'franco libanais': '/lycee-franco-libanais-nahr-ibrahim',
+            'nahr ibrahim': '/lycee-franco-libanais-nahr-ibrahim',
+            'central college': '/central-college-jounieh',
+            'libano allemand': '/lycee-libano-allemand-jounieh',
+            'allemand jounieh': '/lycee-libano-allemand-jounieh',
+            'antonine': '/antonine-sisters-school-ghazir',
+            'ghazir': '/antonine-sisters-school-ghazir',
+            'sja': '/ecole-sja-besan%C3%A7on-kfour',
+            'besancon': '/ecole-sja-besan%C3%A7on-kfour',
+            'kfour': '/ecole-sja-besan%C3%A7on-kfour',
+            'saint francois': '/ecole-saint-francois',
+        }
+
+        # Check for school keywords first
+        for keyword, path in school_mappings.items():
+            if keyword in message_lower:
+                link = f"{base_url}{path}"
+                return self._format_redirect_response(lang, 'school_books', link)
+
+        # Category mappings (order matters - more specific first)
+        category_mappings = [
+            # School books (general)
+            (['school book', 'school books', 'livre scolaire', 'livres scolaires', 'كتب مدرسية', 'كتاب مدرسي'], '/books', 'school_books'),
+
+            # General books
+            (['book', 'books', 'livre', 'livres', 'كتاب', 'كتب', 'reading', 'novel', 'story'], '/books-2', 'books'),
+
+            # Toys
+            (['toy', 'toys', 'jouet', 'jouets', 'لعبة', 'العاب', 'game', 'games', 'jeu', 'jeux', 'puzzle', 'plush', 'squishmallow'], '/toys-gadgets', 'toys'),
+
+            # Writing instruments / Pens
+            (['pen', 'pens', 'stylo', 'stylos', 'قلم', 'اقلام', 'pencil', 'pencils', 'crayon', 'crayons', 'marker', 'markers', 'highlighter'], '/writing-instruments', 'pens'),
+
+            # Stationery
+            (['stationery', 'stationary', 'fourniture', 'fournitures', 'قرطاسية', 'office', 'bureau'], '/stationary-2', 'stationery'),
+
+            # Notebooks / Paper
+            (['notebook', 'notebooks', 'cahier', 'cahiers', 'دفتر', 'دفاتر', 'paper', 'papier', 'ورق'], '/notebook', 'notebooks'),
+
+            # Coloring / Art
+            (['color', 'coloring', 'coloriage', 'تلوين', 'paint', 'painting', 'peinture', 'art', 'craft', 'bricolage'], '/coloring', 'coloring'),
+
+            # Bags / Backpacks
+            (['bag', 'bags', 'backpack', 'sac', 'شنطة', 'حقيبة', 'kipling', 'eastpak', 'polo'], '/stationary-2', 'bags'),
+
+            # Gadgets
+            (['gadget', 'gadgets', 'electronic', 'tech', 'اكسسوارات'], '/gadgets', 'gadgets'),
+
+            # Frames & Albums
+            (['frame', 'frames', 'album', 'albums', 'cadre', 'photo', 'صورة', 'اطار'], '/frames-albums', 'frames'),
+
+            # Gift Items
+            (['gift', 'gifts', 'cadeau', 'cadeaux', 'هدية', 'هدايا', 'present'], '/gift-items', 'gifts'),
+
+            # Board Games
+            (['board game', 'board games', 'jeu de société', 'العاب طاولة'], '/board-games-2', 'board_games'),
+
+            # Puzzles
+            (['puzzle', 'puzzles', 'بازل'], '/puzzle', 'puzzles'),
+
+            # Educational
+            (['educational', 'educatif', 'تعليمي', 'learning'], '/educational-games', 'educational'),
+
+            # Calculator
+            (['calculator', 'calculatrice', 'آلة حاسبة'], '/calculator-computer-accessories', 'calculator'),
+
+            # Eraser / Sharpener
+            (['eraser', 'gomme', 'ممحاة', 'sharpener', 'taille', 'براية'], '/eraser', 'eraser'),
+
+            # Scissors
+            (['scissors', 'ciseaux', 'مقص'], '/scissors-2', 'scissors'),
+
+            # Glue / Tape
+            (['glue', 'colle', 'صمغ', 'tape', 'scotch', 'لاصق', 'adhesive'], '/glue-2', 'glue'),
+
+            # Ruler / Geometry
+            (['ruler', 'règle', 'مسطرة', 'compass', 'geometry', 'هندسة'], '/ruler', 'ruler'),
+
+            # Agenda / Diary
+            (['agenda', 'diary', 'planner', 'مفكرة'], '/agenda-2', 'agenda'),
+        ]
+
+        # Check category mappings
+        for keywords, path, category in category_mappings:
+            for keyword in keywords:
+                if keyword in message_lower:
+                    link = f"{base_url}{path}"
+                    return self._format_redirect_response(lang, category, link)
+
+        return None
+
+    def _format_redirect_response(self, lang: str, category: str, link: str) -> str:
+        """Format the redirect response message"""
+        category_names = {
+            'school_books': {'en': 'School Books', 'ar': 'الكتب المدرسية', 'fr': 'Livres Scolaires'},
+            'books': {'en': 'Books', 'ar': 'الكتب', 'fr': 'Livres'},
+            'toys': {'en': 'Toys & Games', 'ar': 'الألعاب', 'fr': 'Jouets'},
+            'pens': {'en': 'Writing Instruments', 'ar': 'أدوات الكتابة', 'fr': 'Instruments d\'écriture'},
+            'stationery': {'en': 'Stationery', 'ar': 'القرطاسية', 'fr': 'Papeterie'},
+            'notebooks': {'en': 'Notebooks & Paper', 'ar': 'الدفاتر والورق', 'fr': 'Cahiers et Papier'},
+            'coloring': {'en': 'Coloring & Art', 'ar': 'التلوين والفن', 'fr': 'Coloriage et Art'},
+            'bags': {'en': 'Bags & Backpacks', 'ar': 'الحقائب', 'fr': 'Sacs'},
+            'gadgets': {'en': 'Gadgets', 'ar': 'الأجهزة', 'fr': 'Gadgets'},
+            'frames': {'en': 'Frames & Albums', 'ar': 'الإطارات والألبومات', 'fr': 'Cadres et Albums'},
+            'gifts': {'en': 'Gift Items', 'ar': 'الهدايا', 'fr': 'Cadeaux'},
+            'board_games': {'en': 'Board Games', 'ar': 'ألعاب الطاولة', 'fr': 'Jeux de Société'},
+            'puzzles': {'en': 'Puzzles', 'ar': 'البازل', 'fr': 'Puzzles'},
+            'educational': {'en': 'Educational Games', 'ar': 'الألعاب التعليمية', 'fr': 'Jeux Éducatifs'},
+            'calculator': {'en': 'Calculators', 'ar': 'الآلات الحاسبة', 'fr': 'Calculatrices'},
+            'eraser': {'en': 'Erasers & Sharpeners', 'ar': 'الممحاة والبراية', 'fr': 'Gommes et Taille-crayons'},
+            'scissors': {'en': 'Scissors', 'ar': 'المقصات', 'fr': 'Ciseaux'},
+            'glue': {'en': 'Glue & Tape', 'ar': 'الصمغ واللاصق', 'fr': 'Colle et Ruban'},
+            'ruler': {'en': 'Rulers & Geometry', 'ar': 'المساطر والهندسة', 'fr': 'Règles et Géométrie'},
+            'agenda': {'en': 'Agenda & Diaries', 'ar': 'المفكرات', 'fr': 'Agendas'},
+        }
+
+        cat_name = category_names.get(category, {}).get(lang, category_names.get(category, {}).get('en', category))
+
+        messages = {
+            'en': f"📦 *{cat_name}*\n\nYou can browse and order from our website:\n\n🔗 {link}\n\n✨ Free delivery on orders above $60!",
+            'ar': f"📦 *{cat_name}*\n\nيمكنك التصفح والطلب من موقعنا:\n\n🔗 {link}\n\n✨ توصيل مجاني للطلبات فوق 60$!",
+            'fr': f"📦 *{cat_name}*\n\nVous pouvez parcourir et commander sur notre site:\n\n🔗 {link}\n\n✨ Livraison gratuite pour les commandes de plus de 60$!"
+        }
+
+        return messages.get(lang, messages['en'])
+
     def _is_product_list_request(self, message: str) -> bool:
         # Check for whole words only
-        keywords = ['products', 'produits', 'books', 'livres', 'list']
+        keywords = ['products', 'produits', 'list', 'catalogue', 'catalog']
         words = message.lower().split()
         return any(k in words for k in keywords)
 
