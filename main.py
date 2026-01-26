@@ -1361,7 +1361,7 @@ class MessageProcessor:
             (['book', 'books', 'livre', 'livres', 'كتاب', 'كتب', 'reading', 'novel', 'story'], '/books-2', 'books'),
 
             # Toys
-            (['toy', 'toys', 'jouet', 'jouets', 'لعبة', 'العاب', 'game', 'games', 'jeu', 'jeux', 'puzzle', 'plush', 'squishmallow'], '/toys-gadgets', 'toys'),
+            (['toy', 'toys', 'jouet', 'jouets', 'لعبة', 'العاب', 'game', 'games', 'jeu', 'jeux', 'puzzle', 'plush', 'squishmallow', 'lego', 'barbie', 'doll', 'car', 'truck', 'robot', 'dinosaur', 'action figure'], '/toys-gadgets', 'toys'),
 
             # Writing instruments / Pens
             (['pen', 'pens', 'stylo', 'stylos', 'قلم', 'اقلام', 'pencil', 'pencils', 'crayon', 'crayons', 'marker', 'markers', 'highlighter'], '/writing-instruments', 'pens'),
@@ -1422,7 +1422,11 @@ class MessageProcessor:
                     link = f"{base_url}{path}"
                     return self._format_redirect_response(lang, category, link)
 
-        return None
+        # Fallback: redirect ALL product-related queries to website homepage
+        # If message looks like a product query (not a greeting, not a command), redirect to browse
+        if len(message_lower) > 2 and not self._is_greeting(message) and not self._is_help_request(message_lower):
+            link = f"{base_url}"
+            return self._format_redirect_response(lang, 'browse', link)
 
     def _format_redirect_response(self, lang: str, category: str, link: str) -> str:
         """Format the redirect response message"""
@@ -1447,6 +1451,7 @@ class MessageProcessor:
             'glue': {'en': 'Glue & Tape', 'ar': 'الصمغ واللاصق', 'fr': 'Colle et Ruban'},
             'ruler': {'en': 'Rulers & Geometry', 'ar': 'المساطر والهندسة', 'fr': 'Règles et Géométrie'},
             'agenda': {'en': 'Agenda & Diaries', 'ar': 'المفكرات', 'fr': 'Agendas'},
+            'browse': {'en': 'Our Products', 'ar': 'منتجاتنا', 'fr': 'Nos Produits'},
         }
 
         cat_name = category_names.get(category, {}).get(lang, category_names.get(category, {}).get('en', category))
