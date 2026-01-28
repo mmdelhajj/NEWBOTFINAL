@@ -1386,28 +1386,78 @@ class MessageProcessor:
                 return self._format_redirect_response(lang, 'school_books', link)
 
         # Category mappings (order matters - MORE SPECIFIC FIRST!)
+        # Complete mapping based on website analysis - 30k+ items coverage
         category_mappings = [
             # ============ VERY SPECIFIC ITEMS FIRST ============
 
             # Whiteboard / Blackboard (MUST be before markers/pens)
             (['white board', 'whiteboard', 'white-board', 'black board', 'blackboard', 'black-board',
               'سبورة', 'لوح ابيض', 'لوح اسود', 'tableau blanc', 'tableau noir',
-              'board marker', 'board eraser', 'ممحاة سبورة'], '/white-and-black-boards', 'whiteboard'),
+              'board marker', 'board eraser', 'ممحاة سبورة', 'whiteboard marker'], '/white-and-black-boards', 'whiteboard'),
 
-            # Squishmallows / Plush (specific toy category)
+            # Correction Pen/Liquid (specific writing tool)
+            (['correction', 'corrector', 'liquid paper', 'tipp-ex', 'tippex', 'white out',
+              'مصحح', 'سائل تصحيح'], '/corrector', 'correction'),
+
+            # Highlighters (specific before general pens)
+            (['highlighter', 'highlighters', 'surligneur', 'هايلايتر', 'فسفوري', 'قلم فسفوري'], '/highlighter-pens', 'highlighter'),
+
+            # Erasable Pen (specific)
+            (['erasable pen', 'frixion', 'قلم ماسح', 'stylo effaçable'], '/erasable-pen', 'erasable_pen'),
+
+            # Permanent Marker (specific)
+            (['permanent marker', 'permanent', 'ماركر ثابت', 'marqueur permanent'], '/permanent-marker', 'permanent_marker'),
+
+            # ============ SPECIFIC TOY BRANDS (each has own page) ============
+
+            # Lego (dedicated page)
+            (['lego', 'ليغو', 'ليجو'], '/lego', 'lego'),
+
+            # Barbie (dedicated page)
+            (['barbie', 'باربي'], '/games-for-girls', 'barbie'),
+
+            # Nerf (dedicated page)
+            (['nerf', 'نيرف'], '/nerf', 'nerf'),
+
+            # Hot Wheels (dedicated page)
+            (['hot wheels', 'hotwheels', 'hot wheel', 'هوت ويلز'], '/hotwheels', 'hotwheels'),
+
+            # RC Toys / Remote Control
+            (['rc', 'remote control', 'تحكم عن بعد', 'ريموت كنترول', 'drone', 'درون',
+              'helicopter', 'هليكوبتر', 'rc car', 'rc truck'], '/rctoys', 'rc_toys'),
+
+            # Baby Toys
+            (['baby toy', 'baby toys', 'jouet bébé', 'العاب اطفال صغار', 'العاب بيبي',
+              'infant toy', 'toddler toy', 'رضيع'], '/baby-toys', 'baby_toys'),
+
+            # Scientific Toys
+            (['science toy', 'scientific', 'experiment', 'تجربة علمية', 'علوم',
+              'chemistry set', 'microscope', 'telescope'], '/scientific', 'science_toys'),
+
+            # Creation / Arts Toys
+            (['creation toy', 'arts creation', 'العاب فنية', 'craft kit'], '/arts-creations', 'creation_toys'),
+
+            # Squishmallows / Plush
             (['squishmallow', 'squishmallows', 'plush', 'peluche', 'دمية محشوة', 'دبدوب',
-              'stuffed animal', 'teddy', 'teddy bear'], '/squishmallows', 'plush'),
+              'stuffed animal', 'stuffed toy', 'teddy', 'teddy bear', 'دب'], '/squishmallows', 'plush'),
 
-            # Board Games (before general toys)
+            # Lebanese Board Games
+            (['lebanese game', 'العاب لبنانية', 'jeu libanais'], '/lebanese-game', 'lebanese_games'),
+
+            # Classic Board Games
+            (['classic game', 'العاب كلاسيكية', 'jeu classique'], '/foreign-game', 'classic_games'),
+
+            # Board Games (general)
             (['board game', 'board games', 'jeu de société', 'jeux de société', 'العاب طاولة',
-              'monopoly', 'uno', 'jenga', 'chess', 'echecs', 'شطرنج'], '/board-games-2', 'board_games'),
+              'monopoly', 'uno', 'jenga', 'chess', 'echecs', 'شطرنج', 'domino', 'backgammon',
+              'طاولة زهر', 'cards', 'playing cards', 'ورق لعب'], '/board-games-2', 'board_games'),
 
-            # Puzzles (before general toys)
-            (['puzzle', 'puzzles', 'بازل', 'casse-tête'], '/puzzle', 'puzzles'),
+            # Puzzles
+            (['puzzle', 'puzzles', 'بازل', 'casse-tête', 'jigsaw'], '/puzzle', 'puzzles'),
 
-            # Educational Games (before general toys)
+            # Educational Games
             (['educational game', 'educational toy', 'jeu educatif', 'لعبة تعليمية',
-              'learning game', 'learning toy'], '/educational-games', 'educational'),
+              'learning game', 'learning toy', 'تعليمي'], '/educational-games', 'educational'),
 
             # ============ BOOKS CATEGORIES ============
 
@@ -1415,64 +1465,131 @@ class MessageProcessor:
             (['school book', 'school books', 'livre scolaire', 'livres scolaires', 'كتب مدرسية', 'كتاب مدرسي',
               'school supplies', 'fournitures scolaires', 'مستلزمات مدرسية', 'back to school', 'rentrée'], '/books', 'school_books'),
 
+            # Teen books
+            (['teen book', 'teen books', 'livre ado', 'كتب مراهقين', 'young adult', 'ya book'], '/teen', 'teen_books'),
+
+            # Bedtime Stories
+            (['bedtime story', 'bedtime stories', 'histoire du soir', 'قصة قبل النوم',
+              'goodnight', 'bonne nuit'], '/bedtime-stories', 'bedtime'),
+
+            # Spiritual / Religious
+            (['spiritual', 'religious', 'religion', 'bible', 'quran', 'دين', 'روحاني',
+              'كتاب ديني', 'انجيل', 'قرآن'], '/spiritual', 'spiritual'),
+
+            # Science Fiction
+            (['science fiction', 'sci-fi', 'scifi', 'خيال علمي'], '/sciences-fiction', 'scifi'),
+
+            # Self Help
+            (['self help', 'self-help', 'تطوير ذات', 'development', 'motivation'], '/novel-books', 'self_help'),
+
+            # Study Help / Educational Activity
+            (['study help', 'workbook', 'activity book', 'كتاب تمارين', 'كراسة نشاط'], '/educational-activity-books', 'study_help'),
+
+            # Music Books
+            (['music book', 'music', 'موسيقى', 'كتاب موسيقى', 'piano', 'guitar'], '/music-books', 'music_books'),
+
+            # Box Set
+            (['box set', 'book set', 'collection', 'مجموعة كتب', 'coffret'], '/box-set', 'box_set'),
+
             # Novel / Fiction
             (['novel', 'novels', 'roman', 'romans', 'رواية', 'روايات', 'fiction'], '/novel', 'novels'),
 
             # Comic Books
-            (['comic', 'comics', 'bande dessinée', 'bd', 'manga', 'مانغا', 'كوميك'], '/bande-dessinee', 'comics'),
+            (['comic', 'comics', 'bande dessinée', 'bd', 'manga', 'مانغا', 'كوميك', 'graphic novel'], '/bande-dessinee', 'comics'),
 
             # Dictionary
             (['dictionary', 'dictionnaire', 'قاموس', 'dictionaries'], '/dictionary', 'dictionary'),
 
             # Encyclopedia
-            (['encyclopedia', 'encyclopédie', 'موسوعة'], '/encyclopedia', 'encyclopedia'),
+            (['encyclopedia', 'encyclopédie', 'موسوعة', 'encyclopedie'], '/encyclopedia', 'encyclopedia'),
 
             # Cooking books
-            (['cooking', 'recipe', 'cuisine', 'طبخ', 'وصفات', 'cookbook'], '/cooking-books', 'cooking'),
+            (['cooking', 'recipe', 'cuisine', 'طبخ', 'وصفات', 'cookbook', 'كتاب طبخ'], '/cooking-books', 'cooking'),
 
-            # Children books / Early learning
-            (['children book', 'kids book', 'livre enfant', 'كتاب اطفال', 'early learning',
-              'bedtime story', 'قصة اطفال'], '/frensh', 'children_books'),
+            # Little Readers / English books
+            (['little reader', 'english book', 'كتاب انجليزي', 'قراءة'], '/english', 'english_books'),
+
+            # Early Learning / French books
+            (['early learning', 'french book', 'كتاب فرنسي', 'تعلم مبكر'], '/frensh', 'french_books'),
+
+            # Arabic Activity books
+            (['arabic book', 'كتاب عربي', 'نشاط عربي'], '/arabic', 'arabic_books'),
+
+            # Children books / Early learning (general)
+            (['children book', 'kids book', 'livre enfant', 'كتاب اطفال',
+              'قصة اطفال', 'picture book'], '/frensh', 'children_books'),
 
             # General books (after specific types)
             (['book', 'books', 'livre', 'livres', 'كتاب', 'كتب', 'reading', 'story', 'قصة',
               'literature', 'magazine', 'مجلة'], '/books-2', 'books'),
 
-            # ============ TOYS ============
+            # ============ TOYS (general - after specific brands) ============
 
-            # Brand toys (Lego, Barbie, etc.)
-            (['lego', 'barbie', 'hot wheels', 'hotwheels', 'playmobil', 'nerf',
-              'pokemon', 'mario', 'minecraft', 'fortnite', 'paw patrol', 'peppa pig',
-              'cocomelon', 'frozen', 'disney', 'marvel', 'spiderman', 'batman',
-              'transformer', 'transformers', 'hasbro', 'mattel'], '/kids-favorite-toys', 'brand_toys'),
+            # General Brand Toys (catch-all for brands)
+            (['pokemon', 'بوكيمون', 'mario', 'ماريو', 'minecraft', 'ماينكرافت',
+              'fortnite', 'paw patrol', 'باو باترول', 'peppa pig', 'بيبا',
+              'cocomelon', 'frozen', 'فروزن', 'disney', 'ديزني', 'marvel', 'مارفل',
+              'spiderman', 'سبايدرمان', 'batman', 'باتمان', 'transformer', 'transformers',
+              'hasbro', 'mattel', 'clementoni', 'buki', 'lisciani'], '/kids-favorite-toys', 'brand_toys'),
 
-            # General toys
+            # General toys (last toy category)
             (['toy', 'toys', 'jouet', 'jouets', 'لعبة', 'العاب', 'لعب', 'game', 'games', 'jeu', 'jeux',
-              'doll', 'dolls', 'دمية', 'car', 'cars', 'سيارة', 'truck', 'robot', 'dinosaur',
-              'action figure', 'figurine', 'unicorn', 'princess', 'superhero'], '/toys-gadgets', 'toys'),
+              'doll', 'dolls', 'دمية', 'car', 'cars', 'سيارة', 'truck', 'robot', 'dinosaur', 'ديناصور',
+              'action figure', 'figurine', 'unicorn', 'يونيكورن', 'princess', 'اميرة', 'superhero'], '/toys-gadgets', 'toys'),
 
-            # ============ WRITING & OFFICE ============
+            # ============ COLORING & ART ============
 
-            # Coloring / Art & Craft (before general pens)
-            (['coloring', 'coloriage', 'تلوين', 'color pencil', 'crayon de couleur',
-              'الوان خشب', 'watercolor', 'aquarelle', 'الوان مائية'], '/coloring', 'coloring'),
+            # Coloring Pencils (specific)
+            (['coloring pencil', 'colored pencil', 'crayon de couleur', 'الوان خشب',
+              'colour pencil', 'قلم تلوين'], '/coloring-pencil', 'coloring_pencil'),
+
+            # Brush Pens
+            (['brush pen', 'brush pens', 'فرشاة قلم'], '/brush-pen', 'brush_pen'),
+
+            # Wax Pens / Crayons
+            (['wax', 'wax pen', 'crayon wax', 'شمع', 'الوان شمعية'], '/wax-pen', 'wax_pen'),
+
+            # Fiber Pen
+            (['fiber pen', 'fibre pen', 'فايبر'], '/fiber-pen', 'fiber_pen'),
+
+            # Felt Pen
+            (['felt pen', 'felt tip', 'فلوماستر'], '/pens', 'felt_pen'),
+
+            # Coloring (general)
+            (['coloring', 'coloriage', 'تلوين', 'color', 'colour', 'الوان',
+              'watercolor', 'aquarelle', 'الوان مائية'], '/coloring', 'coloring'),
 
             # Painting
-            (['paint', 'painting', 'peinture', 'رسم', 'acrylic', 'oil paint', 'canvas'], '/peinture', 'painting'),
+            (['paint', 'painting', 'peinture', 'رسم', 'acrylic', 'oil paint', 'canvas',
+              'brush', 'فرشاة', 'pinceau'], '/peinture', 'painting'),
 
             # Art & Craft
-            (['art', 'craft', 'bricolage', 'فن', 'اعمال يدوية', 'diy', 'handmade'], '/bricolages', 'art_craft'),
+            (['art', 'craft', 'bricolage', 'فن', 'اعمال يدوية', 'diy', 'handmade',
+              'creative', 'ابداعي'], '/bricolages', 'art_craft'),
 
             # Modeling Clay
             (['clay', 'playdoh', 'play doh', 'play-doh', 'pâte à modeler', 'صلصال', 'معجون',
-              'modeling', 'modelling'], '/modeling-clay-set', 'clay'),
+              'modeling', 'modelling', 'dough'], '/modeling-clay-set', 'clay'),
 
-            # Writing instruments / Pens (after whiteboard)
-            (['pen', 'pens', 'stylo', 'stylos', 'قلم', 'اقلام', 'قلم حبر',
+            # ============ WRITING INSTRUMENTS ============
+
+            # Ball Pen / Uniball
+            (['ball pen', 'ballpoint', 'قلم حبر جاف', 'uniball', 'uni ball'], '/uniball', 'ball_pen'),
+
+            # Pencil Lead / Mechanical Pencil
+            (['pencil lead', 'mechanical pencil', 'قلم رصاص ميكانيكي', 'سن رصاص',
+              'lead refill', 'mine'], '/pencil-lead', 'pencil_lead'),
+
+            # Stylo (general pen)
+            (['stylo', 'ستيلو'], '/stylo', 'stylo'),
+
+            # Writing instruments / Pens (general - after specific types)
+            (['pen', 'pens', 'قلم', 'اقلام', 'قلم حبر',
               'pencil', 'pencils', 'crayon', 'رصاص', 'قلم رصاص',
-              'marker', 'markers', 'marqueur', 'فلوماستر', 'ماركر',
-              'highlighter', 'surligneur', 'هايلايتر',
-              'bic', 'pilot', 'faber', 'stabilo', 'uniball', 'parker', 'maped'], '/writing-instruments', 'pens'),
+              'marker', 'markers', 'marqueur', 'ماركر',
+              'bic', 'pilot', 'faber', 'faber castell', 'stabilo', 'parker', 'maped', 'deli'], '/writing-instruments', 'pens'),
+
+            # ============ OFFICE & STATIONERY ============
 
             # Notebooks / Paper
             (['notebook', 'notebooks', 'cahier', 'cahiers', 'دفتر', 'دفاتر',
@@ -1485,65 +1602,113 @@ class MessageProcessor:
             (['scissors', 'scissor', 'ciseaux', 'مقص'], '/scissors-2', 'scissors'),
 
             # Glue / Tape
-            (['glue', 'colle', 'صمغ', 'tape', 'scotch', 'لاصق', 'adhesive', 'stick', 'uhu'], '/glue-2', 'glue'),
+            (['glue', 'colle', 'صمغ', 'tape', 'scotch', 'لاصق', 'adhesive', 'stick', 'uhu',
+              'glue stick', 'glue gun', 'مسدس صمغ'], '/glue-2', 'glue'),
 
             # Ruler / Geometry
             (['ruler', 'règle', 'مسطرة', 'compass', 'compas', 'برجل', 'geometry', 'هندسة',
-              'protractor', 'منقلة', 'set square', 'مثلث'], '/ruler', 'ruler'),
+              'protractor', 'منقلة', 'set square', 'مثلث', 'geometry set'], '/ruler', 'ruler'),
 
             # Calculator
-            (['calculator', 'calculatrice', 'آلة حاسبة', 'حاسبة', 'casio'], '/calculator-computer-accessories', 'calculator'),
+            (['calculator', 'calculatrice', 'آلة حاسبة', 'حاسبة', 'casio', 'scientific calculator'], '/calculator-computer-accessories', 'calculator'),
 
             # Agenda / Diary
-            (['agenda', 'diary', 'planner', 'مفكرة', 'journal', 'daily planner'], '/agenda-2', 'agenda'),
+            (['agenda', 'diary', 'planner', 'مفكرة', 'journal', 'daily planner', 'weekly planner'], '/agenda-2', 'agenda'),
 
             # Envelopes
             (['envelope', 'envelopes', 'enveloppe', 'مغلف', 'ظرف'], '/envelopes', 'envelopes'),
 
-            # Labels
-            (['label', 'labels', 'étiquette', 'ملصق', 'sticker', 'stickers'], '/label', 'labels'),
+            # Labels / Stickers
+            (['label', 'labels', 'étiquette', 'ملصق', 'sticker', 'stickers', 'ستيكر'], '/label', 'labels'),
 
             # Organizing / Filing
             (['file', 'files', 'folder', 'folders', 'classeur', 'ملف', 'مجلد',
-              'binder', 'organizing', 'filing', 'archive'], '/organizing-filling', 'filing'),
+              'binder', 'organizing', 'filing', 'archive', 'ring binder'], '/organizing-filling', 'filing'),
 
             # Gift Paper & Ribbon
-            (['gift paper', 'wrapping', 'ribbon', 'ruban', 'emballage', 'ورق تغليف', 'شريط'], '/gift-papper-ribbon', 'gift_paper'),
+            (['gift paper', 'wrapping', 'wrapping paper', 'ribbon', 'ruban', 'emballage',
+              'ورق تغليف', 'شريط', 'gift wrap'], '/gift-papper-ribbon', 'gift_paper'),
 
             # CD & USB
-            (['cd', 'dvd', 'usb', 'flash drive', 'memory', 'سي دي', 'فلاش'], '/cd-usb', 'cd_usb'),
+            (['cd', 'dvd', 'usb', 'flash drive', 'flash', 'memory', 'سي دي', 'فلاش',
+              'memory stick', 'thumb drive'], '/cd-usb', 'cd_usb'),
 
             # Ink & Toner
-            (['ink', 'toner', 'cartridge', 'encre', 'حبر', 'خرطوشة'], '/ink-toner', 'ink'),
+            (['ink', 'toner', 'cartridge', 'encre', 'حبر', 'خرطوشة', 'printer ink'], '/ink-toner', 'ink'),
 
             # Office accessories
             (['office', 'bureau', 'مكتب', 'desk', 'stapler', 'agrafeuse', 'دباسة',
-              'paper clip', 'trombone', 'مشبك', 'punch', 'perforatrice', 'خرامة'], '/office-accessories', 'office'),
+              'paper clip', 'trombone', 'مشبك', 'punch', 'perforatrice', 'خرامة',
+              'staples', 'دبابيس'], '/office-accessories', 'office'),
 
             # Umbrella
             (['umbrella', 'parapluie', 'مظلة', 'شمسية'], '/umbrella', 'umbrella'),
 
+            # Copy Center
+            (['copy', 'print', 'photocopy', 'نسخ', 'طباعة', 'تصوير'], '/copy-center', 'copy_center'),
+
             # ============ BAGS ============
 
-            # Bags / Backpacks with brands
+            # Kipling (brand)
+            (['kipling', 'كيبلينغ'], '/kipling', 'kipling'),
+
+            # Eastpak (brand)
+            (['eastpak', 'ايستباك'], '/eastpak', 'eastpak'),
+
+            # Polo (brand)
+            (['polo bag', 'polo backpack', 'بولو'], '/polo-4', 'polo'),
+
+            # Bags / Backpacks (general)
             (['bag', 'bags', 'backpack', 'sac', 'شنطة', 'حقيبة', 'school bag', 'cartable',
-              'kipling', 'eastpak', 'polo', 'lunch box', 'lunch bag', 'صندوق غداء'], '/stationary-2', 'bags'),
+              'lunch box', 'lunch bag', 'صندوق غداء', 'pencil case', 'مقلمة'], '/stationary-2', 'bags'),
 
-            # ============ GADGETS & GIFTS ============
+            # ============ GADGETS & ELECTRONICS ============
 
-            # Gadgets
+            # Smartphone Accessories
+            (['phone', 'smartphone', 'mobile', 'جوال', 'موبايل', 'phone case', 'كفر',
+              'charger', 'شاحن', 'cable', 'كابل', 'earphone', 'سماعة', 'headphone'], '/smartphones-accessories', 'phone_accessories'),
+
+            # Watches
+            (['watch', 'watches', 'ساعة', 'ساعات', 'montre'], '/cables', 'watches'),
+
+            # Batteries
+            (['battery', 'batteries', 'بطارية', 'بطاريات', 'pile', 'piles'], '/batteries', 'batteries'),
+
+            # Globe
+            (['globe', 'كرة ارضية', 'world map', 'خريطة'], '/globe-terrestre', 'globe'),
+
+            # Gadgets (general)
             (['gadget', 'gadgets', 'electronic', 'tech', 'اكسسوارات', 'accessory', 'accessories'], '/gadgets', 'gadgets'),
 
-            # Frames & Albums
-            (['frame', 'frames', 'album', 'albums', 'cadre', 'photo', 'صورة', 'اطار', 'picture frame'], '/frames-albums', 'frames'),
+            # ============ FRAMES & ALBUMS ============
+
+            # Imported Frames
+            (['imported frame', 'اطار مستورد'], '/imported-frame', 'imported_frame'),
+
+            # Albums
+            (['album', 'albums', 'البوم', 'البومات', 'photo album'], '/albums', 'albums'),
+
+            # Frames
+            (['frame', 'frames', 'cadre', 'اطار', 'اطارات', 'picture frame', 'photo frame'], '/frames', 'frames'),
+
+            # Frames & Albums (general)
+            (['photo', 'صورة', 'picture'], '/frames-albums', 'frames_albums'),
+
+            # ============ GIFTS & SEASONAL ============
+
+            # Christmas
+            (['christmas', 'noel', 'noël', 'كريسماس', 'عيد الميلاد', 'santa', 'بابا نويل',
+              'tree', 'شجرة', 'decoration', 'زينة'], '/christmas', 'christmas'),
 
             # Gift Items
-            (['gift', 'gifts', 'cadeau', 'cadeaux', 'هدية', 'هدايا', 'present', 'souvenir'], '/gift-items', 'gifts'),
+            (['gift', 'gifts', 'cadeau', 'cadeaux', 'هدية', 'هدايا', 'present', 'souvenir',
+              'birthday', 'عيد ميلاد'], '/gift-items', 'gifts'),
 
             # ============ STATIONERY GENERAL (last) ============
 
             # General Stationery
-            (['stationery', 'stationary', 'fourniture', 'fournitures', 'قرطاسية', 'supplies'], '/stationary-2', 'stationery'),
+            (['stationery', 'stationary', 'fourniture', 'fournitures', 'قرطاسية', 'supplies',
+              'school supply', 'مستلزمات'], '/stationary-2', 'stationery'),
         ]
 
         # Check category mappings
@@ -1571,20 +1736,53 @@ class MessageProcessor:
             'encyclopedia': {'en': 'Encyclopedia', 'ar': 'الموسوعات', 'fr': 'Encyclopédies'},
             'cooking': {'en': 'Cooking Books', 'ar': 'كتب الطبخ', 'fr': 'Livres de Cuisine'},
             'children_books': {'en': 'Children Books', 'ar': 'كتب الأطفال', 'fr': 'Livres pour Enfants'},
+            'teen_books': {'en': 'Teen Books', 'ar': 'كتب المراهقين', 'fr': 'Livres Ado'},
+            'bedtime': {'en': 'Bedtime Stories', 'ar': 'قصص قبل النوم', 'fr': 'Histoires du Soir'},
+            'spiritual': {'en': 'Spiritual Books', 'ar': 'الكتب الروحانية', 'fr': 'Livres Spirituels'},
+            'scifi': {'en': 'Science Fiction', 'ar': 'الخيال العلمي', 'fr': 'Science Fiction'},
+            'self_help': {'en': 'Self Help', 'ar': 'تطوير الذات', 'fr': 'Développement Personnel'},
+            'study_help': {'en': 'Study Help', 'ar': 'كتب التمارين', 'fr': 'Aide aux Études'},
+            'music_books': {'en': 'Music Books', 'ar': 'كتب الموسيقى', 'fr': 'Livres de Musique'},
+            'box_set': {'en': 'Book Box Sets', 'ar': 'مجموعات الكتب', 'fr': 'Coffrets'},
+            'english_books': {'en': 'English Books', 'ar': 'الكتب الإنجليزية', 'fr': 'Livres Anglais'},
+            'french_books': {'en': 'French Books', 'ar': 'الكتب الفرنسية', 'fr': 'Livres Français'},
+            'arabic_books': {'en': 'Arabic Books', 'ar': 'الكتب العربية', 'fr': 'Livres Arabes'},
 
             # Toys
             'toys': {'en': 'Toys & Games', 'ar': 'الألعاب', 'fr': 'Jouets'},
             'brand_toys': {'en': 'Brand Toys', 'ar': 'ألعاب الماركات', 'fr': 'Jouets de Marque'},
+            'lego': {'en': 'LEGO', 'ar': 'ليغو', 'fr': 'LEGO'},
+            'barbie': {'en': 'Barbie', 'ar': 'باربي', 'fr': 'Barbie'},
+            'nerf': {'en': 'NERF', 'ar': 'نيرف', 'fr': 'NERF'},
+            'hotwheels': {'en': 'Hot Wheels', 'ar': 'هوت ويلز', 'fr': 'Hot Wheels'},
+            'rc_toys': {'en': 'RC Toys', 'ar': 'ألعاب التحكم عن بعد', 'fr': 'Jouets Télécommandés'},
+            'baby_toys': {'en': 'Baby Toys', 'ar': 'ألعاب الأطفال', 'fr': 'Jouets Bébé'},
+            'science_toys': {'en': 'Science Toys', 'ar': 'ألعاب العلوم', 'fr': 'Jouets Scientifiques'},
+            'creation_toys': {'en': 'Creative Toys', 'ar': 'ألعاب إبداعية', 'fr': 'Jouets Créatifs'},
             'plush': {'en': 'Plush & Squishmallows', 'ar': 'الدمى المحشوة', 'fr': 'Peluches'},
+            'lebanese_games': {'en': 'Lebanese Games', 'ar': 'ألعاب لبنانية', 'fr': 'Jeux Libanais'},
+            'classic_games': {'en': 'Classic Games', 'ar': 'ألعاب كلاسيكية', 'fr': 'Jeux Classiques'},
             'board_games': {'en': 'Board Games', 'ar': 'ألعاب الطاولة', 'fr': 'Jeux de Société'},
             'puzzles': {'en': 'Puzzles', 'ar': 'البازل', 'fr': 'Puzzles'},
             'educational': {'en': 'Educational Games', 'ar': 'الألعاب التعليمية', 'fr': 'Jeux Éducatifs'},
 
             # Writing & Office
             'whiteboard': {'en': 'Whiteboards & Accessories', 'ar': 'السبورات وملحقاتها', 'fr': 'Tableaux Blancs'},
+            'correction': {'en': 'Correction', 'ar': 'أدوات التصحيح', 'fr': 'Correction'},
+            'highlighter': {'en': 'Highlighters', 'ar': 'أقلام التحديد', 'fr': 'Surligneurs'},
+            'erasable_pen': {'en': 'Erasable Pens', 'ar': 'أقلام قابلة للمسح', 'fr': 'Stylos Effaçables'},
+            'permanent_marker': {'en': 'Permanent Markers', 'ar': 'ماركر ثابت', 'fr': 'Marqueurs Permanents'},
+            'ball_pen': {'en': 'Ball Pens', 'ar': 'أقلام حبر جاف', 'fr': 'Stylos Bille'},
+            'pencil_lead': {'en': 'Mechanical Pencils', 'ar': 'أقلام رصاص ميكانيكية', 'fr': 'Porte-mines'},
+            'stylo': {'en': 'Pens', 'ar': 'أقلام', 'fr': 'Stylos'},
             'pens': {'en': 'Writing Instruments', 'ar': 'أدوات الكتابة', 'fr': 'Instruments d\'écriture'},
             'notebooks': {'en': 'Notebooks & Paper', 'ar': 'الدفاتر والورق', 'fr': 'Cahiers et Papier'},
             'coloring': {'en': 'Coloring', 'ar': 'التلوين', 'fr': 'Coloriage'},
+            'coloring_pencil': {'en': 'Coloring Pencils', 'ar': 'ألوان خشب', 'fr': 'Crayons de Couleur'},
+            'brush_pen': {'en': 'Brush Pens', 'ar': 'أقلام فرشاة', 'fr': 'Feutres Pinceaux'},
+            'wax_pen': {'en': 'Wax Crayons', 'ar': 'ألوان شمعية', 'fr': 'Crayons Cire'},
+            'fiber_pen': {'en': 'Fiber Pens', 'ar': 'أقلام فايبر', 'fr': 'Feutres'},
+            'felt_pen': {'en': 'Felt Pens', 'ar': 'فلوماستر', 'fr': 'Feutres'},
             'painting': {'en': 'Painting', 'ar': 'الرسم', 'fr': 'Peinture'},
             'art_craft': {'en': 'Art & Craft', 'ar': 'الفن والأشغال اليدوية', 'fr': 'Art et Bricolage'},
             'clay': {'en': 'Modeling Clay', 'ar': 'الصلصال', 'fr': 'Pâte à Modeler'},
@@ -1604,11 +1802,31 @@ class MessageProcessor:
             'umbrella': {'en': 'Umbrellas', 'ar': 'المظلات', 'fr': 'Parapluies'},
             'stationery': {'en': 'Stationery', 'ar': 'القرطاسية', 'fr': 'Papeterie'},
 
+            # Copy Center
+            'copy_center': {'en': 'Copy Center', 'ar': 'مركز النسخ', 'fr': 'Centre de Copie'},
+
             # Bags & Accessories
             'bags': {'en': 'Bags & Backpacks', 'ar': 'الحقائب', 'fr': 'Sacs'},
+            'kipling': {'en': 'Kipling Bags', 'ar': 'حقائب كيبلينغ', 'fr': 'Sacs Kipling'},
+            'eastpak': {'en': 'Eastpak Bags', 'ar': 'حقائب ايستباك', 'fr': 'Sacs Eastpak'},
+            'polo': {'en': 'Polo Bags', 'ar': 'حقائب بولو', 'fr': 'Sacs Polo'},
+
+            # Gadgets & Electronics
             'gadgets': {'en': 'Gadgets', 'ar': 'الأجهزة', 'fr': 'Gadgets'},
-            'frames': {'en': 'Frames & Albums', 'ar': 'الإطارات والألبومات', 'fr': 'Cadres et Albums'},
+            'phone_accessories': {'en': 'Phone Accessories', 'ar': 'اكسسوارات الهاتف', 'fr': 'Accessoires Téléphone'},
+            'watches': {'en': 'Watches', 'ar': 'الساعات', 'fr': 'Montres'},
+            'batteries': {'en': 'Batteries', 'ar': 'البطاريات', 'fr': 'Piles'},
+            'globe': {'en': 'Globes & Maps', 'ar': 'الكرة الأرضية', 'fr': 'Globes'},
+
+            # Frames & Albums
+            'frames': {'en': 'Frames', 'ar': 'الإطارات', 'fr': 'Cadres'},
+            'albums': {'en': 'Photo Albums', 'ar': 'ألبومات الصور', 'fr': 'Albums Photo'},
+            'imported_frame': {'en': 'Imported Frames', 'ar': 'إطارات مستوردة', 'fr': 'Cadres Importés'},
+            'frames_albums': {'en': 'Frames & Albums', 'ar': 'الإطارات والألبومات', 'fr': 'Cadres et Albums'},
+
+            # Gifts & Seasonal
             'gifts': {'en': 'Gift Items', 'ar': 'الهدايا', 'fr': 'Cadeaux'},
+            'christmas': {'en': 'Christmas', 'ar': 'عيد الميلاد', 'fr': 'Noël'},
 
             # Fallback
             'browse': {'en': 'Our Products', 'ar': 'منتجاتنا', 'fr': 'Nos Produits'},
