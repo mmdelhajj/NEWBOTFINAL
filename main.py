@@ -1327,44 +1327,46 @@ class MessageProcessor:
         message_lower = message.lower().strip()
         base_url = "https://store.libmemoires.com"
 
-        # Smart school detection - each school has multiple keywords
+        # Smart school detection - each school has multiple keywords (from customer input patterns)
         # Format: (list of keywords, url_path)
         schools = [
-            # SSCC - College Saint Coeur Kfarhbab
-            (['sscc', 'saint coeur', 'st coeur', 'سان كور', 'القلب الاقدس',
-              'kfarhbab', 'kfar hbab', 'كفرحباب', 'كفر حباب'],
-             '/college-saint-coeur-kfarhbab'),
-
             # Lycee Franco Libanais - Nahr Ibrahim
-            (['franco libanais', 'franco liban', 'الفرنسية اللبنانية', 'فرانكو',
-              'nahr ibrahim', 'نهر ابراهيم', 'lycee franco', 'french lebanese',
-              'franco', 'libanais nahr'],
+            (['lni', 'lycee nahr ibrahim', 'nahr ibrahim', 'franco libanais', 'franco liban',
+              'lycee franco', 'نهر ابراهيم', 'الفرنسية اللبنانية', 'فرانكو', 'french lebanese'],
              '/lycee-franco-libanais-nahr-ibrahim'),
 
             # Central College Jounieh
-            (['central college', 'central jounieh', 'سنترال', 'كولج سنترال',
-              'central'],
+            (['ccj', 'college central', 'central college', 'markaziye', 'markazieh', 'markaziyeh',
+              'central jounieh', 'سنترال', 'مركزية', 'كولج سنترال', 'central'],
              '/central-college-jounieh'),
 
+            # SSCC - College Saint Coeur Kfarhbab
+            (['sscc', 'saint coeur', 'st coeur', 'yasou3iye', 'yasou3iyeh', 'yassou3iye', 'yassoui3iye',
+              'kfarhbab', 'kfar hbab', 'يسوعية', 'سان كور', 'القلب الاقدس', 'كفرحباب'],
+             '/college-saint-coeur-kfarhbab'),
+
             # Lycee Libano Allemand - Jounieh
-            (['libano allemand', 'libano german', 'الالمانية اللبنانية', 'المانية',
-              'allemand jounieh', 'lycee allemand', 'lycee libano', 'german school',
-              'libano', 'allemand'],
+            (['alac', 'lycee all', 'lycee allemand', 'elmaniye', 'elmaniyeh', 'almaniye', 'almanieh',
+              'lycee jounieh', 'madrase l elmaniye', 'madraset l elmaniye', 'madraset el elmaniye',
+              'libano allemand', 'libano allemend', 'libano german',
+              'المانية', 'الالمانية', 'مدرسة الالمانية', 'ليسيه جونيه', 'allemand', 'libano'],
              '/lycee-libano-allemand-jounieh'),
 
-            # Antonine Sisters School - Ghazir
-            (['antonine', 'antonian', 'انطونين', 'راهبات الانطونية',
-              'ghazir', 'غازير', 'antonine sisters', 'soeurs antonines'],
+            # Antonine Sisters School
+            (['antonine', 'asg', 'antounieh', 'antounier', 'antounie', 'antouniye', 'antouniyeh',
+              'madraset l rahbet', 'madraset el rahbet', 'madrase rahbet',
+              'انطونية', 'انطونين', 'راهبات', 'مدرسة الراهبات', 'antonine sisters', 'antonian'],
              '/antonine-sisters-school-ghazir'),
 
             # Ecole SJA Besançon - Kfour
-            (['sja', 'besancon', 'besançon', 'بيزانسون', 'كفور',
-              'kfour', 'ecole sja', 'سان جان'],
+            (['sja', 'kfour', 'charite', 'ecole jeanne antide', 'jeanne antide',
+              'besancon', 'besançon', 'besancons', 'bes', 'كفور', 'بيزانسون', 'شاريتي', 'شاريته'],
              '/ecole-sja-besan%C3%A7on-kfour'),
 
-            # Ecole Saint Francois
-            (['saint francois', 'st francois', 'san francois', 'سان فرنسوا',
-              'القديس فرنسيس', 'ecole francois', 'saint francis'],
+            # Ecole Saint Francois - Ghazir
+            (['saint francois', 'st francois', 'san francois', 'ghazir',
+              'soeur de la croix', 'soeurs de la croix', 'croix',
+              'سان فرنسوا', 'غازير', 'اخوات الصليب', 'صليب'],
              '/ecole-saint-francois'),
         ]
 
@@ -1376,7 +1378,7 @@ class MessageProcessor:
                     return self._format_redirect_response(lang, 'school_books', link)
 
         # If message contains "lycee" or "ecole" or "school" + other words, redirect to school books page
-        school_indicators = ['lycee', 'lycée', 'ecole', 'école', 'school', 'college', 'مدرسة', 'ليسيه', 'كلية']
+        school_indicators = ['lycee', 'lycée', 'ecole', 'école', 'school', 'college', 'مدرسة', 'ليسيه', 'كلية', 'madrase', 'madrasa', 'madraset']
         for indicator in school_indicators:
             if indicator in message_lower and len(message_lower) > len(indicator) + 2:
                 # It's a school query but we don't know which one - send to schools page
